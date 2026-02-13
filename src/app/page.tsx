@@ -333,7 +333,7 @@ function HomeContent() {
       setResults(getAllSermons());
     } else {
       const stripped = stripQuotes(q);
-      setResults(mode === "all" ? searchAll(stripped) : mode === "any" ? searchAny(stripped) : search(stripped));
+      setResults(mode === "any" ? searchAny(stripped) : searchAll(stripped));
     }
   }, []);
 
@@ -402,15 +402,21 @@ function HomeContent() {
     return buildBibleIndex(getAllSermons());
   }, [loading]);
 
-  // Compute the base set of results (before metadata filters) for dynamic option computation
+  // Compute the base set of results (before metadata filters) for dynamic option computation.
+  // When snippets are loading for a phrase query, preserve the previous filtered results
+  // to avoid flashing a broader unfiltered candidate set.
+  const lastPhraseFiltered = useRef<SermonMeta[]>([]);
   const baseFiltered = useMemo(() => {
     if (isSearching) {
-      if (snippetsLoading || effectiveParsed.phrases.length === 0) {
+      if (effectiveParsed.phrases.length === 0) {
         return results;
+      }
+      if (snippetsLoading) {
+        return lastPhraseFiltered.current;
       }
       // Keep results that have the phrase in the transcript OR in metadata fields
       // (e.g. searching for "Ian Hamilton" should still show sermons preached by him)
-      return results.filter((s) => {
+      const filtered = results.filter((s) => {
         if (snippets[s.id] && snippets[s.id].length > 0) return true;
         // Check if any phrase matches a metadata field
         const meta = [s.title, s.preacher, s.bibleText, s.keywords, s.moreInfoText]
@@ -420,6 +426,8 @@ function HomeContent() {
           meta.some((field) => field.includes(phrase))
         );
       });
+      lastPhraseFiltered.current = filtered;
+      return filtered;
     }
     return results;
   }, [isSearching, results, snippets, snippetsLoading, effectiveParsed]);
