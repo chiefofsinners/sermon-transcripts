@@ -276,7 +276,10 @@ function HomeContent() {
     }
 
     // Non-phrase queries handle snippets separately (page-level fetch below)
-    if (!hasPhrases) return;
+    if (!hasPhrases) {
+      if (abortRef.current) { abortRef.current.abort(); abortRef.current = null; }
+      return;
+    }
 
     if (phraseSnippetIds.length === 0) {
       setSnippets({});
@@ -354,6 +357,7 @@ function HomeContent() {
 
   const handleModeChange = useCallback((mode: SearchMode) => {
     setSearchMode(mode);
+    setSnippets({});
     startTransition(() => {
       runSearch(inputValue, mode);
     });
@@ -654,7 +658,10 @@ function HomeContent() {
   useEffect(() => {
     if (pageDebounceRef.current) clearTimeout(pageDebounceRef.current);
 
-    if (!query.trim() || hasPhrases || pageIds.length === 0) return;
+    if (!query.trim() || hasPhrases || pageIds.length === 0) {
+      if (pageAbortRef.current) { pageAbortRef.current.abort(); pageAbortRef.current = null; }
+      return;
+    }
 
     // When query changes, all page IDs need fresh snippets regardless of cache
     const queryChanged = query !== snippetQueryRef.current;
