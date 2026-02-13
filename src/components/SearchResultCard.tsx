@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { useMemo } from "react";
-import type { SermonMeta, SermonSnippet } from "@/lib/types";
-import { parseQuery } from "@/lib/parseQuery";
+import type { SermonMeta, SermonSnippet, SearchMode } from "@/lib/types";
+import { parseQuery, stripQuotes } from "@/lib/parseQuery";
 
 function formatDate(dateStr: string | null): string {
   if (!dateStr) return "";
@@ -80,19 +80,25 @@ export default function SearchResultCard({
   snippets,
   loading,
   query,
+  searchMode = "all",
 }: {
   sermon: SermonMeta;
   snippets?: SermonSnippet[];
   loading?: boolean;
   query?: string;
+  searchMode?: SearchMode;
 }) {
-  const { phrases, terms } = useMemo(
-    () => (query ? parseQuery(query) : { phrases: [] as string[], terms: [] as string[] }),
-    [query]
-  );
+  const { phrases, terms } = useMemo(() => {
+    if (!query) return { phrases: [] as string[], terms: [] as string[] };
+    if (searchMode === "exact") {
+      return { phrases: [stripQuotes(query.trim()).toLowerCase()], terms: [] };
+    }
+    return parseQuery(query);
+  }, [query, searchMode]);
 
+  const modeParam = searchMode !== "all" ? `&mode=${searchMode}` : "";
   const href = query
-    ? `/sermon/${sermon.id}?q=${encodeURIComponent(query)}`
+    ? `/sermon/${sermon.id}?q=${encodeURIComponent(query)}${modeParam}`
     : `/sermon/${sermon.id}`;
 
   const hl = (text: string) => highlightText(text, phrases, terms);

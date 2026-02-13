@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import type { SermonMeta, SermonSnippet } from "@/lib/types";
+import type { SermonMeta, SermonSnippet, SearchMode } from "@/lib/types";
 import SearchResultCard from "./SearchResultCard";
 
 export default function SearchResultList({
@@ -8,6 +8,7 @@ export default function SearchResultList({
   snippets,
   snippetsLoading,
   query,
+  searchMode,
   sortControl,
   pageSizeControl,
 }: {
@@ -16,6 +17,7 @@ export default function SearchResultList({
   snippets: Record<string, SermonSnippet[]>;
   snippetsLoading: boolean;
   query: string;
+  searchMode?: SearchMode;
   sortControl?: ReactNode;
   pageSizeControl?: ReactNode;
 }) {
@@ -45,6 +47,7 @@ export default function SearchResultList({
           snippets={snippets[sermon.id]}
           loading={snippetsLoading && !snippets[sermon.id]}
           query={query}
+          searchMode={searchMode}
         />
       ))}
     </div>

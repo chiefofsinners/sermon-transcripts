@@ -2,7 +2,8 @@
 
 import { Suspense } from "react";
 import { useSearchParams } from "next/navigation";
-import { parseQuery } from "@/lib/parseQuery";
+import { parseQuery, stripQuotes } from "@/lib/parseQuery";
+import type { SearchMode } from "@/lib/types";
 
 /**
  * Highlights search terms and phrases within a string of text.
@@ -20,10 +21,13 @@ export default function HighlightText({ text }: { text: string }) {
 function HighlightTextInner({ text }: { text: string }) {
   const searchParams = useSearchParams();
   const query = searchParams.get("q") ?? "";
+  const mode = (searchParams.get("mode") as SearchMode) || "all";
 
   if (!query.trim()) return <>{text}</>;
 
-  const { phrases, terms } = parseQuery(query);
+  const { phrases, terms } = mode === "exact"
+    ? { phrases: [stripQuotes(query.trim()).toLowerCase()], terms: [] as string[] }
+    : parseQuery(query);
 
   const parts: string[] = [];
   for (const phrase of phrases) {

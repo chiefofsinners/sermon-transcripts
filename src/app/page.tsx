@@ -749,6 +749,7 @@ function HomeContent() {
               snippets={snippets}
               snippetsLoading={snippetsLoading}
               query={query}
+              searchMode={searchMode}
               sortControl={<SortControl sortBy={sortBy} onSortChange={handleSortChange} isSearching />}
               pageSizeControl={pageSizeControl}
             />
