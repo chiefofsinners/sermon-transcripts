@@ -35,8 +35,8 @@ yarn-error.log*
 !.env.example
 
 # downloaded sermon data (gitignored in template; committed in instances)
-/data/sermons/
-!/data/sermons/.gitkeep
+/data/*
+!/data/.gitkeep
 
 # generated search index
 /public/search-index.json.gz
