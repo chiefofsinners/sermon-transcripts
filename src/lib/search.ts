@@ -1,0 +1,109 @@
+"use client";
+
+import type { Document as FlexDocument, Index as FlexIndex } from "flexsearch";
+import type { SermonMeta } from "./types";
+
+interface SearchBundle {
+  metadata: SermonMeta[];
+  docIndex: Record<string, string>;
+  transcriptIndex: Record<string, string>;
+}
+
+let docIndex: FlexDocument<SermonMeta> | null = null;
+let transcriptIndex: FlexIndex | null = null;
+let metadataMap: Map<string, SermonMeta> = new Map();
+let allMetadata: SermonMeta[] = [];
+let loaded = false;
+let loading: Promise<void> | null = null;
+
+export async function loadSearchIndex(): Promise<void> {
+  if (loaded) return;
+  if (loading) return loading;
+
+  loading = (async () => {
+    const [{ Document, Index }, res] = await Promise.all([
+      import("flexsearch"),
+      fetch("/search-index.json.gz"),
+    ]);
+
+    if (!res.ok) throw new Error(`Failed to fetch search index: ${res.status}`);
+
+    const ds = new DecompressionStream("gzip");
+    const decompressed = res.body!.pipeThrough(ds);
+    const text = await new Response(decompressed).text();
+    const bundle: SearchBundle = JSON.parse(text);
+
+    allMetadata = bundle.metadata;
+    metadataMap = new Map(bundle.metadata.map((s) => [s.id, s]));
+
+    docIndex = new Document<SermonMeta>({
+      document: {
+        id: "id",
+        index: [
+          { field: "title", tokenize: "forward", resolution: 9 },
+          { field: "preacher", tokenize: "forward", resolution: 5 },
+          { field: "bibleText", tokenize: "forward", resolution: 7 },
+          { field: "keywords", tokenize: "forward", resolution: 6 },
+          { field: "moreInfoText", tokenize: "forward", resolution: 7 },
+        ],
+      },
+    });
+
+    for (const [key, data] of Object.entries(bundle.docIndex)) {
+      if (data !== undefined) {
+        docIndex.import(key, data);
+      }
+    }
+
+    transcriptIndex = new Index({
+      tokenize: "forward",
+      resolution: 9,
+      context: {
+        depth: 2,
+        bidirectional: true,
+        resolution: 9,
+      },
+    });
+
+    for (const [key, data] of Object.entries(bundle.transcriptIndex)) {
+      if (data !== undefined) {
+        transcriptIndex.import(key, data);
+      }
+    }
+
+    loaded = true;
+  })();
+
+  return loading;
+}
+
+export function getAllSermons(): SermonMeta[] {
+  return allMetadata;
+}
+
+export function search(query: string): SermonMeta[] {
+  if (!docIndex || !transcriptIndex) return [];
+
+  const resultIds = new Set<string>();
+  const limit = allMetadata.length;
+
+  const docResults = docIndex.search(query, { limit });
+  for (const fieldResult of docResults) {
+    for (const id of fieldResult.result) {
+      resultIds.add(String(id));
+    }
+  }
+
+  const transcriptResults = transcriptIndex.search(query, { limit });
+  for (const id of transcriptResults) {
+    resultIds.add(String(id));
+  }
+
+  return Array.from(resultIds)
+    .map((id) => metadataMap.get(id))
+    .filter((s): s is SermonMeta => s !== undefined);
+}
+
+export function isLoaded(): boolean {
+  return loaded;
+}

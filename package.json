@@ -1,0 +1,39 @@
+{
+  "name": "sermon-transcripts",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint",
+    "download": "tsx scripts/download.ts",
+    "generate-index": "tsx scripts/generate-index.ts",
+    "prebuild": "tsx scripts/generate-index.ts",
+    "pipeline": "npm run download && npm run build"
+  },
+  "dependencies": {
+    "@google-cloud/speech": "^7.2.1",
+    "@google-cloud/storage": "^7.19.0",
+    "@headlessui/react": "^2.2.9",
+    "dotenv": "^17.2.4",
+    "flexsearch": "^0.8.212",
+    "next": "^16.1.6",
+    "openai": "^6.21.0",
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
+    "tsx": "^4.21.0"
+  },
+  "devDependencies": {
+    "@resvg/resvg-js": "^2.6.2",
+    "@tailwindcss/postcss": "^4",
+    "@types/node": "20.19.33",
+    "@types/react": "19.2.14",
+    "@types/react-dom": "^19",
+    "eslint": "^9",
+    "eslint-config-next": "^16.1.6",
+    "satori": "^0.19.2",
+    "tailwindcss": "^4",
+    "typescript": "5.9.3"
+  }
+}
