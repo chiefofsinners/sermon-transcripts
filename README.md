@@ -108,4 +108,7 @@ public/
 
 ## Deployment
 
-Deploy to Vercel and set all environment variables from `.env.example` in your Vercel project settings. Use `GOOGLE_CREDENTIALS` (JSON string) instead of `GOOGLE_APPLICATION_CREDENTIALS` (file path) in production.
+Deploy to Vercel and set all environment variables from `.env.example` in your Vercel project settings. For Google Cloud credentials in production, use one of:
+
+- `GOOGLE_CREDENTIALS` — the raw JSON string of your service account key
+- `GOOGLE_CREDENTIALS_BASE64` — the base64-encoded service account JSON (useful if your platform has issues with raw JSON in env vars: `base64 < service-account-key.json`)
