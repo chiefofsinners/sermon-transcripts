@@ -1,3 +1,5 @@
+export type SearchMode = "all" | "any" | "exact";
+
 export interface SermonMeta {
   [key: string]: string | number | boolean | null;
   id: string;

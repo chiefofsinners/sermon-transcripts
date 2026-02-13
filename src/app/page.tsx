@@ -8,10 +8,10 @@ import SearchResultList from "@/components/SearchResultList";
 import SermonFilters, { SortControl } from "@/components/SermonFilters";
 import type { SortBy, FilterOptions } from "@/components/SermonFilters";
 import Pagination from "@/components/Pagination";
-import { loadSearchIndex, search, getAllSermons, isLoaded } from "@/lib/search";
+import { loadSearchIndex, search, searchAny, searchAll, getAllSermons, isLoaded } from "@/lib/search";
 import { parseQuery, stripQuotes } from "@/lib/parseQuery";
 import { buildBibleIndex, matchesPassageFilter, parsePassageFilter } from "@/lib/bible";
-import type { SermonMeta, SermonSnippet } from "@/lib/types";
+import type { SermonMeta, SermonSnippet, SearchMode } from "@/lib/types";
 
 const PAGE_SIZES = [10, 25, 50, 100] as const;
 const DEFAULT_PAGE_SIZE = 10;
@@ -22,6 +22,8 @@ const NAV_LIST_KEY = "sermon-nav-list";
 // Module-level cache for filter options (persists across client-side navigations)
 let cachedFilterOptions: FilterOptions | null = null;
 
+const DEFAULT_SEARCH_MODE: SearchMode = "all";
+
 interface CachedState {
   query: string;
   page: number;
@@ -29,6 +31,7 @@ interface CachedState {
   snippets: Record<string, SermonSnippet[]>;
   sortBy?: SortBy;
   pageSize?: number;
+  searchMode?: SearchMode;
   filterPreacher?: string;
   filterSeries?: string;
   filterKeyword?: string;
@@ -64,6 +67,7 @@ function HomeContent() {
   const initialDateFrom = searchParams.get("dateFrom") || "";
   const initialDateTo = searchParams.get("dateTo") || "";
   const initialPageSize = Number(searchParams.get("pageSize")) || DEFAULT_PAGE_SIZE;
+  const initialMode = (searchParams.get("mode") as SearchMode) || DEFAULT_SEARCH_MODE;
 
   // Try to restore from sessionStorage on mount
   const cached = useRef(readCache(initialQuery, initialPage));
@@ -78,7 +82,9 @@ function HomeContent() {
   const [results, setResults] = useState<SermonMeta[]>(() => {
     if (cached.current?.results?.length) return cached.current.results;
     if (alreadyLoaded) {
-      return initialQuery.trim() ? search(stripQuotes(initialQuery)) : getAllSermons();
+      if (!initialQuery.trim()) return getAllSermons();
+      const stripped = stripQuotes(initialQuery);
+      return initialMode === "all" ? searchAll(stripped) : initialMode === "any" ? searchAny(stripped) : search(stripped);
     }
     return [];
   });
@@ -98,6 +104,7 @@ function HomeContent() {
   const [filterDateFrom, setFilterDateFrom] = useState(cached.current?.filterDateFrom ?? initialDateFrom);
   const [filterDateTo, setFilterDateTo] = useState(cached.current?.filterDateTo ?? initialDateTo);
   const [pageSize, setPageSize] = useState(cached.current?.pageSize ?? initialPageSize);
+  const [searchMode, setSearchMode] = useState<SearchMode>(cached.current?.searchMode ?? initialMode);
   const [filterOptions, setFilterOptions] = useState<FilterOptions | null>(cachedFilterOptions);
 
   const abortRef = useRef<AbortController | null>(null);
@@ -126,10 +133,11 @@ function HomeContent() {
     if (filterDateFrom) params.set("dateFrom", filterDateFrom);
     if (filterDateTo) params.set("dateTo", filterDateTo);
     if (pageSize !== DEFAULT_PAGE_SIZE) params.set("pageSize", String(pageSize));
+    if (searchMode !== DEFAULT_SEARCH_MODE) params.set("mode", searchMode);
     const qs = params.toString();
     const url = qs ? `?${qs}` : window.location.pathname;
     window.history.replaceState(null, "", url);
-  }, [query, page, sortBy, filterPreacher, filterSeries, filterKeyword, filterPassage, filterDateFrom, filterDateTo, pageSize]);
+  }, [query, page, sortBy, filterPreacher, filterSeries, filterKeyword, filterPassage, filterDateFrom, filterDateTo, pageSize, searchMode]);
 
   // Persist state to sessionStorage for back-navigation restore
   useEffect(() => {
@@ -143,7 +151,7 @@ function HomeContent() {
       try {
         sessionStorage.setItem(
           CACHE_KEY,
-          JSON.stringify({ query, page, results, snippets: cachedSnippets, sortBy, pageSize, filterPreacher, filterSeries, filterKeyword, filterPassage, filterDateFrom, filterDateTo })
+          JSON.stringify({ query, page, results, snippets: cachedSnippets, sortBy, pageSize, searchMode, filterPreacher, filterSeries, filterKeyword, filterPassage, filterDateFrom, filterDateTo })
         );
       } catch {}
     } else if (!isSearching) {
@@ -151,11 +159,11 @@ function HomeContent() {
       try {
         sessionStorage.setItem(
           CACHE_KEY,
-          JSON.stringify({ query: "", page, results: [], snippets: {}, sortBy, pageSize, filterPreacher, filterSeries, filterKeyword, filterPassage, filterDateFrom, filterDateTo })
+          JSON.stringify({ query: "", page, results: [], snippets: {}, sortBy, pageSize, searchMode, filterPreacher, filterSeries, filterKeyword, filterPassage, filterDateFrom, filterDateTo })
         );
       } catch {}
     }
-  }, [query, page, results, snippets, snippetsLoading, isSearching, sortBy, pageSize, filterPreacher, filterSeries, filterKeyword, filterPassage, filterDateFrom, filterDateTo]);
+  }, [query, page, results, snippets, snippetsLoading, isSearching, sortBy, pageSize, searchMode, filterPreacher, filterSeries, filterKeyword, filterPassage, filterDateFrom, filterDateTo]);
 
   // Save scroll position continuously (throttled via rAF)
   useEffect(() => {
@@ -201,7 +209,8 @@ function HomeContent() {
         // Only set results if we didn't restore from cache
         if (!cached.current) {
           if (initialQuery.trim()) {
-            setResults(search(stripQuotes(initialQuery)));
+            const stripped = stripQuotes(initialQuery);
+            setResults(initialMode === "all" ? searchAll(stripped) : initialMode === "any" ? searchAny(stripped) : search(stripped));
           } else {
             setResults(getAllSermons());
           }
@@ -217,10 +226,16 @@ function HomeContent() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Detect whether the current query contains quoted phrases
-  const hasPhrases = useMemo(() => {
-    return parseQuery(query).phrases.length > 0;
-  }, [query]);
+  // Compute effective phrases/terms based on search mode.
+  // "exact" treats the entire query as one phrase; "all"/"any" respect manual quotes.
+  const effectiveParsed = useMemo(() => {
+    if (searchMode === "exact" && query.trim()) {
+      return { phrases: [stripQuotes(query.trim()).toLowerCase()], terms: [] };
+    }
+    return parseQuery(query);
+  }, [query, searchMode]);
+
+  const hasPhrases = effectiveParsed.phrases.length > 0;
 
   // For phrase queries, send ALL result IDs so the API can filter by transcript content.
   // For non-phrase queries, we only need snippets for display, not filtering.
@@ -228,6 +243,15 @@ function HomeContent() {
     if (!hasPhrases) return [];
     return results.map((s) => s.id);
   }, [results, hasPhrases]);
+
+  // Build the query string sent to the snippets API.
+  // For "exact" mode, wrap in quotes so the API treats the full query as a phrase.
+  const snippetApiQuery = useMemo(() => {
+    if (searchMode === "exact" && query.trim()) {
+      return `"${stripQuotes(query.trim())}"`;
+    }
+    return query.trim();
+  }, [query, searchMode]);
 
   // Phrase-query snippet fetch (all IDs — needed for baseFiltered phrase filtering)
   useEffect(() => {
@@ -267,7 +291,7 @@ function HomeContent() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             ids: phraseSnippetIds,
-            query: query.trim(),
+            query: snippetApiQuery,
           }),
           signal: controller.signal,
         });
@@ -285,7 +309,27 @@ function HomeContent() {
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
-  }, [query, phraseSnippetIds, hasPhrases]);
+  }, [query, phraseSnippetIds, hasPhrases, snippetApiQuery]);
+
+  const searchModeRef = useRef(searchMode);
+  searchModeRef.current = searchMode;
+
+  const runSearch = useCallback((q: string, mode: SearchMode) => {
+    setQuery(q);
+    setPage(1);
+    if (q.trim() !== "") {
+      setSortBy((prev) => (prev === "date-desc" ? "best-match" : prev));
+    } else {
+      setSortBy((prev) => (prev === "best-match" ? "date-desc" : prev));
+    }
+    if (!isLoaded()) return;
+    if (q.trim() === "") {
+      setResults(getAllSermons());
+    } else {
+      const stripped = stripQuotes(q);
+      setResults(mode === "all" ? searchAll(stripped) : mode === "any" ? searchAny(stripped) : search(stripped));
+    }
+  }, []);
 
   const handleSearch = useCallback((q: string) => {
     // Update input immediately so typing is never laggy
@@ -295,23 +339,17 @@ function HomeContent() {
     if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
     searchDebounceRef.current = setTimeout(() => {
       startTransition(() => {
-        setQuery(q);
-        setPage(1);
-        // Auto-switch sort: best-match when searching, date-desc when browsing
-        if (q.trim() !== "") {
-          setSortBy((prev) => (prev === "date-desc" ? "best-match" : prev));
-        } else {
-          setSortBy((prev) => (prev === "best-match" ? "date-desc" : prev));
-        }
-        if (!isLoaded()) return;
-        if (q.trim() === "") {
-          setResults(getAllSermons());
-        } else {
-          setResults(search(stripQuotes(q)));
-        }
+        runSearch(q, searchModeRef.current);
       });
     }, 150);
-  }, []);
+  }, [runSearch]);
+
+  const handleModeChange = useCallback((mode: SearchMode) => {
+    setSearchMode(mode);
+    startTransition(() => {
+      runSearch(inputValue, mode);
+    });
+  }, [runSearch, inputValue]);
 
   const handleSortChange = useCallback((v: SortBy) => {
     setSortBy(v);
@@ -361,8 +399,7 @@ function HomeContent() {
   // Compute the base set of results (before metadata filters) for dynamic option computation
   const baseFiltered = useMemo(() => {
     if (isSearching) {
-      const parsed = parseQuery(query);
-      if (snippetsLoading || parsed.phrases.length === 0) {
+      if (snippetsLoading || effectiveParsed.phrases.length === 0) {
         return results;
       }
       // Keep results that have the phrase in the transcript OR in metadata fields
@@ -373,13 +410,13 @@ function HomeContent() {
         const meta = [s.title, s.preacher, s.bibleText, s.keywords, s.moreInfoText]
           .filter(Boolean)
           .map((v) => v!.toLowerCase());
-        return parsed.phrases.some((phrase) =>
+        return effectiveParsed.phrases.some((phrase) =>
           meta.some((field) => field.includes(phrase))
         );
       });
     }
     return results;
-  }, [isSearching, results, snippets, snippetsLoading, query]);
+  }, [isSearching, results, snippets, snippetsLoading, effectiveParsed]);
 
   // Bible index filtered by other active filters (for passage picker cascading)
   const pickerBibleIndex = useMemo(() => {
@@ -528,6 +565,7 @@ function HomeContent() {
     if (filterDateFrom) params.set("dateFrom", filterDateFrom);
     if (filterDateTo) params.set("dateTo", filterDateTo);
     if (pageSize !== DEFAULT_PAGE_SIZE) params.set("pageSize", String(pageSize));
+    if (searchMode !== DEFAULT_SEARCH_MODE) params.set("mode", searchMode);
     const qs = params.toString();
     try {
       sessionStorage.setItem(
@@ -539,7 +577,7 @@ function HomeContent() {
         })
       );
     } catch {}
-  }, [displayResults, query, page, sortBy, pageSize, filterPreacher, filterSeries, filterKeyword, filterPassage, filterDateFrom, filterDateTo]);
+  }, [displayResults, query, page, sortBy, pageSize, searchMode, filterPreacher, filterSeries, filterKeyword, filterPassage, filterDateFrom, filterDateTo]);
 
   const pageSizeControl = (
     <span className="hidden sm:inline text-sm text-gray-500 dark:text-gray-400">
@@ -639,7 +677,7 @@ function HomeContent() {
         </header>
 
         <div className="mb-8">
-          <SearchBar value={inputValue} onChange={handleSearch} loading={loading} />
+          <SearchBar value={inputValue} onChange={handleSearch} loading={loading} mode={searchMode} onModeChange={handleModeChange} />
         </div>
 
         {loading ? null : isSearching ? (

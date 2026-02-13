@@ -104,6 +104,70 @@ export function search(query: string): SermonMeta[] {
     .filter((s): s is SermonMeta => s !== undefined);
 }
 
+/** OR search: returns sermons matching any word in the query. */
+export function searchAny(query: string): SermonMeta[] {
+  if (!docIndex || !transcriptIndex) return [];
+
+  const words = query.toLowerCase().split(/\s+/).filter((w) => w.length >= 2);
+  if (words.length === 0) return [];
+  if (words.length === 1) return search(query);
+
+  const limit = allMetadata.length;
+  const resultIds = new Set<string>();
+
+  for (const word of words) {
+    const docResults = docIndex.search(word, { limit });
+    for (const fieldResult of docResults) {
+      for (const id of fieldResult.result) {
+        resultIds.add(String(id));
+      }
+    }
+    const transcriptResults = transcriptIndex.search(word, { limit });
+    for (const id of transcriptResults) {
+      resultIds.add(String(id));
+    }
+  }
+
+  return Array.from(resultIds)
+    .map((id) => metadataMap.get(id))
+    .filter((s): s is SermonMeta => s !== undefined);
+}
+
+/** AND search: returns only sermons matching every word in the query. */
+export function searchAll(query: string): SermonMeta[] {
+  if (!docIndex || !transcriptIndex) return [];
+
+  const words = query.toLowerCase().split(/\s+/).filter((w) => w.length >= 2);
+  if (words.length === 0) return [];
+  if (words.length === 1) return search(query);
+
+  const limit = allMetadata.length;
+
+  const wordSets = words.map((word) => {
+    const ids = new Set<string>();
+    const docResults = docIndex!.search(word, { limit });
+    for (const fieldResult of docResults) {
+      for (const id of fieldResult.result) {
+        ids.add(String(id));
+      }
+    }
+    const transcriptResults = transcriptIndex!.search(word, { limit });
+    for (const id of transcriptResults) {
+      ids.add(String(id));
+    }
+    return ids;
+  });
+
+  let intersection = wordSets[0];
+  for (let i = 1; i < wordSets.length; i++) {
+    intersection = new Set([...intersection].filter((id) => wordSets[i].has(id)));
+  }
+
+  return Array.from(intersection)
+    .map((id) => metadataMap.get(id))
+    .filter((s): s is SermonMeta => s !== undefined);
+}
+
 export function isLoaded(): boolean {
   return loaded;
 }

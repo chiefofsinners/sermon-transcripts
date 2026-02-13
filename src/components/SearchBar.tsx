@@ -1,15 +1,26 @@
 "use client";
 
 import { useRef, useEffect, type KeyboardEvent } from "react";
+import type { SearchMode } from "@/lib/types";
+
+const MODES: { value: SearchMode; label: string }[] = [
+  { value: "any", label: "Any word" },
+  { value: "all", label: "All words" },
+  { value: "exact", label: "Exact phrase" },
+];
 
 export default function SearchBar({
   value,
   onChange,
   loading,
+  mode,
+  onModeChange,
 }: {
   value: string;
   onChange: (value: string) => void;
   loading: boolean;
+  mode: SearchMode;
+  onModeChange: (mode: SearchMode) => void;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -70,9 +81,22 @@ export default function SearchBar({
         ) : null}
       </div>
     </div>
-      <p className="mt-2 text-center text-xs text-gray-500">
-        Tip: Use quotes for exact phrases, e.g. &ldquo;grace alone&rdquo;
-      </p>
+      <div className="flex justify-center gap-1 mt-2">
+        {MODES.map((m) => (
+          <button
+            key={m.value}
+            type="button"
+            onClick={() => onModeChange(m.value)}
+            className={`px-3 py-1 text-xs rounded-full cursor-pointer transition-colors ${
+              mode === m.value
+                ? "bg-gray-300 text-gray-700 dark:bg-gray-700 dark:text-gray-300"
+                : "text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300"
+            }`}
+          >
+            {m.label}
+          </button>
+        ))}
+      </div>
     </div>
   );
 }
