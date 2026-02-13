@@ -308,7 +308,9 @@ function HomeContent() {
         if (err instanceof DOMException && err.name === "AbortError") return;
         console.error("Snippet fetch error:", err);
       } finally {
-        setSnippetsLoading(false);
+        if (abortRef.current === controller) {
+          setSnippetsLoading(false);
+        }
       }
     }, 300);
 
@@ -688,7 +690,9 @@ function HomeContent() {
         if (err instanceof DOMException && err.name === "AbortError") return;
         console.error("Snippet fetch error:", err);
       } finally {
-        setSnippetsLoading(false);
+        if (pageAbortRef.current === controller) {
+          setSnippetsLoading(false);
+        }
       }
     }, 100);
 
