@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useState, useEffect, useCallback, useRef, useMemo } from "react";
+import { Suspense, useState, useEffect, useCallback, useRef, useMemo, useTransition } from "react";
 import { useSearchParams } from "next/navigation";
 import SearchBar from "@/components/SearchBar";
 import SermonList from "@/components/SermonList";
@@ -72,6 +72,9 @@ function HomeContent() {
   const alreadyLoaded = isLoaded() && cachedFilterOptions !== null;
 
   const [query, setQuery] = useState(cached.current?.query ?? initialQuery);
+  const [inputValue, setInputValue] = useState(query);
+  const [, startTransition] = useTransition();
+  const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [results, setResults] = useState<SermonMeta[]>(() => {
     if (cached.current?.results?.length) return cached.current.results;
     if (alreadyLoaded) {
@@ -285,20 +288,29 @@ function HomeContent() {
   }, [query, phraseSnippetIds, hasPhrases]);
 
   const handleSearch = useCallback((q: string) => {
-    setQuery(q);
-    setPage(1);
-    // Auto-switch sort: best-match when searching, date-desc when browsing
-    if (q.trim() !== "") {
-      setSortBy((prev) => (prev === "date-desc" ? "best-match" : prev));
-    } else {
-      setSortBy((prev) => (prev === "best-match" ? "date-desc" : prev));
-    }
-    if (!isLoaded()) return;
-    if (q.trim() === "") {
-      setResults(getAllSermons());
-    } else {
-      setResults(search(stripQuotes(q)));
-    }
+    // Update input immediately so typing is never laggy
+    setInputValue(q);
+
+    // Debounce the expensive search/state updates
+    if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+    searchDebounceRef.current = setTimeout(() => {
+      startTransition(() => {
+        setQuery(q);
+        setPage(1);
+        // Auto-switch sort: best-match when searching, date-desc when browsing
+        if (q.trim() !== "") {
+          setSortBy((prev) => (prev === "date-desc" ? "best-match" : prev));
+        } else {
+          setSortBy((prev) => (prev === "best-match" ? "date-desc" : prev));
+        }
+        if (!isLoaded()) return;
+        if (q.trim() === "") {
+          setResults(getAllSermons());
+        } else {
+          setResults(search(stripQuotes(q)));
+        }
+      });
+    }, 150);
   }, []);
 
   const handleSortChange = useCallback((v: SortBy) => {
@@ -627,7 +639,7 @@ function HomeContent() {
         </header>
 
         <div className="mb-8">
-          <SearchBar value={query} onChange={handleSearch} loading={loading} />
+          <SearchBar value={inputValue} onChange={handleSearch} loading={loading} />
         </div>
 
         {loading ? null : isSearching ? (
