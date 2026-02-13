@@ -44,10 +44,16 @@ export default async function SermonPage({
 
   const title = sermon.title || sermon.displayTitle;
 
+  const broadcasterId = process.env.SERMONAUDIO_BROADCASTER_ID;
+  const listenUrl =
+    broadcasterId && sermon.sermonID && /^\d+$/.test(sermon.sermonID)
+      ? `https://www.sermonaudio.com/sermoninfo.asp?SID=${sermon.sermonID}`
+      : undefined;
+
   return (
     <main className="min-h-screen bg-gray-50 dark:bg-gray-950">
       <ReadingSettingsProvider>
-        <SermonHeader title={title} />
+        <SermonHeader title={title} listenUrl={listenUrl} />
         <BackToSearch sermonId={id} />
         <div className="max-w-3xl mx-auto px-4 pt-24 pb-12 animate-fade-in">
           <article>

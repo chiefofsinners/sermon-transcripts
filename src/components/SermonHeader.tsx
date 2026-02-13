@@ -7,7 +7,7 @@ import { useReadingSettings } from "./ReadingSettingsProvider";
 type FontSize = "small" | "medium" | "large" | "xlarge";
 type FontFamily = "sans" | "serif";
 
-export default function SermonHeader({ title }: { title: string }) {
+export default function SermonHeader({ title, listenUrl }: { title: string; listenUrl?: string }) {
   const [showSettings, setShowSettings] = useState(false);
   const { fontSize, fontFamily, setFontSize, setFontFamily } = useReadingSettings();
 
@@ -36,6 +36,31 @@ export default function SermonHeader({ title }: { title: string }) {
           <h1 className="flex-1 min-w-0 text-base font-semibold text-gray-900 dark:text-gray-100 leading-snug line-clamp-2 animate-fade-in">
             {title}
           </h1>
+          {listenUrl && (
+            <a
+              href={listenUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label="Listen on SermonAudio"
+              className="shrink-0 w-10 h-10 rounded-full flex items-center justify-center text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-300 dark:hover:bg-gray-800 transition-colors"
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="20"
+                height="20"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+                <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
+                <path d="M19.07 4.93a10 10 0 0 1 0 14.14" />
+              </svg>
+            </a>
+          )}
           <button
             onClick={() => setShowSettings(true)}
             aria-label="Reading settings"
