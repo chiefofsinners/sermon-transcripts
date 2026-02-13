@@ -13,6 +13,12 @@ import { parseQuery, stripQuotes } from "@/lib/parseQuery";
 import { buildBibleIndex, matchesPassageFilter, parsePassageFilter } from "@/lib/bible";
 import type { SermonMeta, SermonSnippet, SearchMode } from "@/lib/types";
 
+const SEARCH_MODES: { value: SearchMode; label: string }[] = [
+  { value: "any", label: "Any word" },
+  { value: "all", label: "All words" },
+  { value: "exact", label: "Exact phrase" },
+];
+
 const PAGE_SIZES = [10, 25, 50, 100] as const;
 const DEFAULT_PAGE_SIZE = 10;
 const CACHE_KEY = "sermon-search-state";
@@ -596,6 +602,25 @@ function HomeContent() {
     </span>
   );
 
+  const modePills = (
+    <div className="flex gap-1">
+      {SEARCH_MODES.map((m) => (
+        <button
+          key={m.value}
+          type="button"
+          onClick={() => handleModeChange(m.value)}
+          className={`px-3 py-1 text-xs rounded-full cursor-pointer transition-colors ${
+            searchMode === m.value
+              ? "bg-gray-300 text-gray-700 dark:bg-gray-700 dark:text-gray-300"
+              : "text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300"
+          }`}
+        >
+          {m.label}
+        </button>
+      ))}
+    </div>
+  );
+
   const totalPages = Math.ceil(displayResults.length / pageSize);
   const paginatedResults = displayResults.slice(
     (page - 1) * pageSize,
@@ -676,8 +701,8 @@ function HomeContent() {
           </p>
         </header>
 
-        <div className="mb-8">
-          <SearchBar value={inputValue} onChange={handleSearch} loading={loading} mode={searchMode} onModeChange={handleModeChange} />
+        <div className="mb-4">
+          <SearchBar value={inputValue} onChange={handleSearch} loading={loading} />
         </div>
 
         {loading ? null : isSearching ? (
@@ -702,6 +727,7 @@ function HomeContent() {
                 onDateFromChange={handleDateFromChange}
                 onDateToChange={handleDateToChange}
                 isSearching
+                toolbar={modePills}
               />
             )}
             <Pagination
@@ -740,6 +766,7 @@ function HomeContent() {
                 onPassageChange={handlePassageChange}
                 onDateFromChange={handleDateFromChange}
                 onDateToChange={handleDateToChange}
+                toolbar={modePills}
               />
             )}
             <Pagination
