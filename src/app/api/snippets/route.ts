@@ -97,6 +97,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Invalid request" }, { status: 400 });
   }
 
+  console.log(`[search] query="${query}" mode=${mode ?? "default"} ids=${(ids as string[]).length}`);
+
   const { phrases, terms } = parseQuery(query);
 
   // All needles to search for (phrases searched as exact strings)
