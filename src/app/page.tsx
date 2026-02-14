@@ -364,7 +364,6 @@ function HomeContent() {
     // refresh — the phrase fetch populates snippets but never updates these
     // refs, leaving stale data that causes the page fetch to be skipped.
     snippetQueryRef.current = '';
-    snippetModeRef.current = '';
     startTransition(() => {
       runSearch(inputValue, mode);
     });
