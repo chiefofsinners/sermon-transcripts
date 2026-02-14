@@ -13,10 +13,10 @@ import { parseQuery, stripQuotes } from "@/lib/parseQuery";
 import { buildBibleIndex, matchesPassageFilter, parsePassageFilter } from "@/lib/bible";
 import type { SermonMeta, SermonSnippet, SearchMode } from "@/lib/types";
 
-const SEARCH_MODES: { value: SearchMode; label: string }[] = [
-  { value: "any", label: "Any word" },
-  { value: "all", label: "All words" },
-  { value: "exact", label: "Exact phrase" },
+const SEARCH_MODES: { value: SearchMode; label: string; shortLabel: string }[] = [
+  { value: "any", label: "Any word", shortLabel: "Any" },
+  { value: "all", label: "All words", shortLabel: "All" },
+  { value: "exact", label: "Exact phrase", shortLabel: "Exact" },
 ];
 
 const PAGE_SIZES = [10, 25, 50, 100] as const;
@@ -497,8 +497,9 @@ function HomeContent() {
     const dates = forDates.map((s) => s.preachDate).filter(Boolean) as string[];
     const minDate = dates.length > 0 ? dates.reduce((a, b) => (a < b ? a : b)) : undefined;
     const maxDate = dates.length > 0 ? dates.reduce((a, b) => (a > b ? a : b)) : undefined;
+    const availableDates = new Set(dates);
 
-    return { preachers, series, keywords, minDate, maxDate };
+    return { preachers, series, keywords, minDate, maxDate, availableDates };
   }, [filterOptions, baseFiltered, filterPreacher, filterSeries, filterKeyword, filterPassage, filterDateFrom, filterDateTo, bibleIndex]);
 
   // Apply filters/sort for browse mode, phrase filtering + filters for search mode
@@ -622,13 +623,14 @@ function HomeContent() {
           key={m.value}
           type="button"
           onClick={() => handleModeChange(m.value)}
-          className={`px-3 py-1 text-xs rounded-full cursor-pointer transition-colors ${
+          className={`px-3.5 py-1.5 text-sm sm:px-3 sm:py-1 sm:text-xs rounded-full cursor-pointer transition-colors ${
             searchMode === m.value
               ? "bg-gray-300 text-gray-700 dark:bg-gray-700 dark:text-gray-300"
               : "text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300"
           }`}
         >
-          {m.label}
+          <span className="sm:hidden">{m.shortLabel}</span>
+          <span className="hidden sm:inline">{m.label}</span>
         </button>
       ))}
     </div>

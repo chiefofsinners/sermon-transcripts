@@ -111,7 +111,7 @@ export default function SearchResultCard({
       <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 leading-snug">
         {hl(sermon.title || sermon.displayTitle)}
       </h3>
-      <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm text-gray-500 dark:text-gray-400">
+      <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-base sm:text-sm text-gray-500 dark:text-gray-400">
         <span>{hl(sermon.preacher)}</span>
         {sermon.preachDate && (
           <span>
@@ -126,7 +126,7 @@ export default function SearchResultCard({
         )}
       </div>
       {sermon.series && (
-        <div className="mt-1.5 text-xs text-gray-500">
+        <div className="mt-1.5 text-sm sm:text-xs text-gray-500">
           Series: {hl(sermon.series)}
         </div>
       )}
@@ -139,7 +139,7 @@ export default function SearchResultCard({
           </div>
         ) : snippets && snippets.length > 0 ? (
           snippets.map((snippet, i) => (
-            <p key={i} className="text-sm text-gray-600 dark:text-gray-400 leading-relaxed">
+            <p key={i} className="text-base sm:text-sm text-gray-600 dark:text-gray-400 leading-relaxed">
               <span className="text-gray-500">&hellip; </span>
               <HighlightedSnippet snippet={snippet} />
               <span className="text-gray-500"> &hellip;</span>

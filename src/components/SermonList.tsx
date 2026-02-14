@@ -17,7 +17,7 @@ export default function SermonList({
     <div className="space-y-3">
       <div className="flex items-center justify-between pt-4 mb-4">
         <div className="flex items-center gap-4">
-          <p className="text-sm text-gray-500 dark:text-gray-400">
+          <p className="text-base sm:text-sm text-gray-500 dark:text-gray-400">
             {totalCount.toLocaleString()} sermon{totalCount !== 1 ? "s" : ""}
           </p>
           {pageSizeControl}

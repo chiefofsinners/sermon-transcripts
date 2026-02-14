@@ -14,7 +14,7 @@ export default function Pagination({
       <button
         onClick={() => onPageChange(1)}
         disabled={page <= 1}
-        className="px-2.5 py-1.5 text-sm font-medium rounded-md border border-gray-300 dark:border-gray-600
+        className="px-3 py-2 text-base sm:px-2.5 sm:py-1.5 sm:text-sm font-medium rounded-md border border-gray-300 dark:border-gray-600
                    enabled:hover:bg-gray-300 dark:enabled:hover:bg-gray-800 enabled:cursor-pointer
                    disabled:opacity-40 disabled:cursor-default
                    text-gray-700 dark:text-gray-300 bg-gray-200 dark:bg-gray-900 transition-colors"
@@ -26,7 +26,7 @@ export default function Pagination({
       <button
         onClick={() => onPageChange(page - 1)}
         disabled={page <= 1}
-        className="px-3 py-1.5 text-sm font-medium rounded-md border border-gray-300 dark:border-gray-600
+        className="px-3.5 py-2 text-base sm:px-3 sm:py-1.5 sm:text-sm font-medium rounded-md border border-gray-300 dark:border-gray-600
                    enabled:hover:bg-gray-300 dark:enabled:hover:bg-gray-800 enabled:cursor-pointer
                    disabled:opacity-40 disabled:cursor-default
                    text-gray-700 dark:text-gray-300 bg-gray-200 dark:bg-gray-900 transition-colors"
@@ -34,13 +34,13 @@ export default function Pagination({
         <span className="hidden sm:inline">Previous</span>
         <span className="sm:hidden">&lsaquo;</span>
       </button>
-      <span className="text-sm text-gray-500 dark:text-gray-400">
+      <span className="text-base sm:text-sm text-gray-500 dark:text-gray-400">
         Page {page} of {totalPages}
       </span>
       <button
         onClick={() => onPageChange(page + 1)}
         disabled={page >= totalPages}
-        className="px-3 py-1.5 text-sm font-medium rounded-md border border-gray-300 dark:border-gray-600
+        className="px-3.5 py-2 text-base sm:px-3 sm:py-1.5 sm:text-sm font-medium rounded-md border border-gray-300 dark:border-gray-600
                    enabled:hover:bg-gray-300 dark:enabled:hover:bg-gray-800 enabled:cursor-pointer
                    disabled:opacity-40 disabled:cursor-default
                    text-gray-700 dark:text-gray-300 bg-gray-200 dark:bg-gray-900 transition-colors"
@@ -51,7 +51,7 @@ export default function Pagination({
       <button
         onClick={() => onPageChange(totalPages)}
         disabled={page >= totalPages}
-        className="px-2.5 py-1.5 text-sm font-medium rounded-md border border-gray-300 dark:border-gray-600
+        className="px-3 py-2 text-base sm:px-2.5 sm:py-1.5 sm:text-sm font-medium rounded-md border border-gray-300 dark:border-gray-600
                    enabled:hover:bg-gray-300 dark:enabled:hover:bg-gray-800 enabled:cursor-pointer
                    disabled:opacity-40 disabled:cursor-default
                    text-gray-700 dark:text-gray-300 bg-gray-200 dark:bg-gray-900 transition-colors"

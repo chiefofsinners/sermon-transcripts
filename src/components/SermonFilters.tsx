@@ -22,6 +22,7 @@ export interface FilterOptions {
   keywords: string[];
   minDate?: string;
   maxDate?: string;
+  availableDates?: Set<string>;
 }
 
 function passageDisplayLabel(passage: string): string {
@@ -81,13 +82,13 @@ function Check() {
 }
 
 const btnClass =
-  "inline-flex items-center gap-2 px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-md bg-gray-200 dark:bg-gray-950 text-gray-700 dark:text-gray-300 shadow-sm hover:bg-gray-300 dark:hover:bg-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-400 dark:focus:ring-gray-500 focus:border-transparent cursor-pointer";
+  "inline-flex items-center gap-2 px-3.5 py-2 text-base sm:px-3 sm:py-1.5 sm:text-sm border border-gray-300 dark:border-gray-600 rounded-md bg-gray-200 dark:bg-gray-950 text-gray-700 dark:text-gray-300 shadow-sm hover:bg-gray-300 dark:hover:bg-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-400 dark:focus:ring-gray-500 focus:border-transparent cursor-pointer";
 
 const panelClass =
   "z-10 mt-1 rounded-md bg-gray-200 dark:bg-gray-950 shadow-lg ring-1 ring-black/5 dark:ring-white/10 focus:outline-none overflow-auto [--anchor-gap:4px] [--anchor-max-height:24rem] [--anchor-padding:16px]";
 
 const optionClass =
-  "flex items-center justify-between gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 cursor-pointer select-none data-[focus]:bg-gray-100 dark:data-[focus]:bg-gray-900 data-[focus]:text-gray-900 dark:data-[focus]:text-gray-100 data-[selected]:font-medium";
+  "flex items-center justify-between gap-2 px-3 py-2.5 text-base sm:py-2 sm:text-sm text-gray-700 dark:text-gray-300 cursor-pointer select-none data-[focus]:bg-gray-100 dark:data-[focus]:bg-gray-900 data-[focus]:text-gray-900 dark:data-[focus]:text-gray-100 data-[selected]:font-medium";
 
 export function SortControl({
   sortBy,
@@ -198,9 +199,9 @@ export default function SermonFilters({
       <div className="flex items-center justify-between">
         <button
           onClick={() => setOpen(!open)}
-          className="inline-flex items-center gap-1.5 px-2 py-1.5 text-sm text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 cursor-pointer transition-colors shrink-0"
+          className="inline-flex items-center gap-1.5 px-2 py-2 text-base sm:py-1.5 sm:text-sm text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 cursor-pointer transition-colors shrink-0"
         >
-          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+          <svg className="w-5 h-5 sm:w-4 sm:h-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" d="M10.5 6h9.75M10.5 6a1.5 1.5 0 1 1-3 0m3 0a1.5 1.5 0 1 0-3 0M3.75 6H7.5m3 12h9.75m-9.75 0a1.5 1.5 0 0 1-3 0m3 0a1.5 1.5 0 0 0-3 0m-3.75 0H7.5m9-6h3.75m-3.75 0a1.5 1.5 0 0 1-3 0m3 0a1.5 1.5 0 0 0-3 0m-9.75 0h9.75" />
           </svg>
           <span className="hidden sm:inline">{open ? "Hide Filters" : "Show Filters"}</span>
@@ -228,7 +229,7 @@ export default function SermonFilters({
           {hasActiveFilters && (
             <button
               onClick={handleClear}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 cursor-pointer transition-colors rounded-md hover:bg-gray-200 dark:hover:bg-gray-800"
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 text-base sm:px-3 sm:py-1.5 sm:text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 cursor-pointer transition-colors rounded-md hover:bg-gray-200 dark:hover:bg-gray-800"
             >
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
@@ -318,6 +319,8 @@ export default function SermonFilters({
               max={dateTo || options.maxDate}
               placeholder="From"
               ariaLabel="Date from"
+              initialMonth={options.minDate}
+              availableDates={options.availableDates}
             />
             <span className="text-gray-500 text-sm">–</span>
             <DatePicker
@@ -327,6 +330,8 @@ export default function SermonFilters({
               max={options.maxDate}
               placeholder="To"
               ariaLabel="Date to"
+              initialMonth={options.maxDate}
+              availableDates={options.availableDates}
             />
             {(dateFrom || dateTo) && (
               <span

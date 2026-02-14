@@ -85,7 +85,7 @@ function formatDisplay(value: string, placeholder: string, short?: boolean): str
 }
 
 const defaultBtnClass =
-  "inline-flex items-center gap-2 px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-md bg-gray-200 dark:bg-gray-950 text-gray-700 dark:text-gray-300 shadow-sm hover:bg-gray-300 dark:hover:bg-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-400 dark:focus:ring-gray-500 focus:border-transparent cursor-pointer";
+  "inline-flex items-center gap-2 px-3.5 py-2 text-base sm:px-3 sm:py-1.5 sm:text-sm border border-gray-300 dark:border-gray-600 rounded-md bg-gray-200 dark:bg-gray-950 text-gray-700 dark:text-gray-300 shadow-sm hover:bg-gray-300 dark:hover:bg-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-400 dark:focus:ring-gray-500 focus:border-transparent cursor-pointer";
 
 export default function DatePicker({
   value,
@@ -96,6 +96,8 @@ export default function DatePicker({
   ariaLabel,
   className,
   shortDisplay,
+  initialMonth,
+  availableDates,
 }: {
   value: string;
   onChange: (v: string) => void;
@@ -105,6 +107,10 @@ export default function DatePicker({
   ariaLabel?: string;
   className?: string;
   shortDisplay?: boolean;
+  /** Date string (YYYY-MM-DD) whose month to show when picker opens with no selected value */
+  initialMonth?: string;
+  /** Set of date strings (YYYY-MM-DD) that have entries — only these dates are highlighted */
+  availableDates?: Set<string>;
 }) {
   const selected = useMemo(() => parseDate(value), [value]);
   const minDate = useMemo(() => parseDate(min ?? ""), [min]);
@@ -177,8 +183,8 @@ export default function DatePicker({
             className={className ?? defaultBtnClass}
             aria-label={ariaLabel}
             onClick={() => {
-              // Reset view to selected date when opening
-              const d = selected ?? new Date();
+              // Reset view to selected date, or initialMonth, when opening
+              const d = selected ?? parseDate(initialMonth ?? "") ?? new Date();
               setViewYear(d.getFullYear());
               setViewMonth(d.getMonth());
             }}
@@ -267,6 +273,7 @@ export default function DatePicker({
               {days.map((day, i) => {
                 const isSelected = sameDay(day.date, selected);
                 const isToday = sameDay(day.date, today);
+                const hasEntry = !availableDates || availableDates.has(fmt(day.date));
                 return (
                   <button
                     key={i}
@@ -280,9 +287,13 @@ export default function DatePicker({
                       "w-full aspect-square flex items-center justify-center text-sm rounded-md cursor-pointer transition-colors",
                       day.disabled
                         ? "text-gray-300 dark:text-gray-700 cursor-not-allowed"
-                        : day.inMonth
-                          ? "text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-800"
-                          : "text-gray-500 dark:text-gray-600 hover:bg-gray-300 dark:hover:bg-gray-800",
+                        : hasEntry
+                          ? day.inMonth
+                            ? "text-gray-700 dark:text-gray-300 font-semibold hover:bg-gray-300 dark:hover:bg-gray-800"
+                            : "text-gray-500 dark:text-gray-500 font-semibold hover:bg-gray-300 dark:hover:bg-gray-800"
+                          : day.inMonth
+                            ? "text-gray-400 dark:text-gray-600 hover:bg-gray-300 dark:hover:bg-gray-800"
+                            : "text-gray-300 dark:text-gray-700 hover:bg-gray-300 dark:hover:bg-gray-800",
                       isSelected && "bg-gray-700! dark:bg-gray-300! text-white! dark:text-gray-900! font-semibold",
                       isToday && !isSelected && "ring-1 ring-gray-400 dark:ring-gray-500",
                     ]
