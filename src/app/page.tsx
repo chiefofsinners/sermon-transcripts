@@ -215,8 +215,7 @@ function HomeContent() {
         // Only set results if we didn't restore from cache
         if (!cached.current) {
           if (initialQuery.trim()) {
-            const stripped = stripQuotes(initialQuery);
-            setResults(initialMode === "all" ? searchAll(stripped) : initialMode === "any" ? searchAny(stripped) : search(stripped));
+            setResults(initialMode === "any" ? searchAny(initialQuery) : initialMode === "all" ? searchAll(stripQuotes(initialQuery)) : search(stripQuotes(initialQuery)));
           } else {
             setResults(getAllSermons());
           }
@@ -301,6 +300,7 @@ function HomeContent() {
           body: JSON.stringify({
             ids: phraseSnippetIds,
             query: snippetApiQuery,
+            mode: searchMode,
           }),
           signal: controller.signal,
         });
@@ -337,8 +337,7 @@ function HomeContent() {
     if (q.trim() === "") {
       setResults(getAllSermons());
     } else {
-      const stripped = stripQuotes(q);
-      setResults(mode === "any" ? searchAny(stripped) : searchAll(stripped));
+      setResults(mode === "any" ? searchAny(q) : searchAll(stripQuotes(q)));
     }
   }, []);
 
@@ -414,7 +413,7 @@ function HomeContent() {
   const lastPhraseFiltered = useRef<SermonMeta[]>([]);
   const baseFiltered = useMemo(() => {
     if (isSearching) {
-      if (effectiveParsed.phrases.length === 0) {
+      if (!hasPhrases) {
         return results;
       }
       if (snippetsLoading) {
@@ -436,7 +435,7 @@ function HomeContent() {
       return filtered;
     }
     return results;
-  }, [isSearching, results, snippets, snippetsLoading, effectiveParsed]);
+  }, [isSearching, results, snippets, snippetsLoading, effectiveParsed, hasPhrases]);
 
   // Bible index filtered by other active filters (for passage picker cascading)
   const pickerBibleIndex = useMemo(() => {
@@ -681,7 +680,7 @@ function HomeContent() {
         const res = await fetch("/api/snippets", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ ids: missing, query: query.trim() }),
+          body: JSON.stringify({ ids: missing, query: query.trim(), mode: searchMode }),
           signal: controller.signal,
         });
         if (!res.ok) throw new Error("Snippet fetch failed");

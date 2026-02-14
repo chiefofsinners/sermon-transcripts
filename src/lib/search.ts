@@ -2,6 +2,7 @@
 
 import type { Document as FlexDocument, Index as FlexIndex } from "flexsearch";
 import type { SermonMeta } from "./types";
+import { parseQuery } from "./parseQuery";
 
 interface SearchBundle {
   metadata: SermonMeta[];
@@ -104,25 +105,27 @@ export function search(query: string): SermonMeta[] {
     .filter((s): s is SermonMeta => s !== undefined);
 }
 
-/** OR search: returns sermons matching any word in the query. */
+/** OR search: returns sermons matching any word or quoted phrase in the query. */
 export function searchAny(query: string): SermonMeta[] {
   if (!docIndex || !transcriptIndex) return [];
 
-  const words = query.toLowerCase().split(/\s+/).filter((w) => w.length >= 2);
-  if (words.length === 0) return [];
-  if (words.length === 1) return search(query);
+  const { phrases, terms } = parseQuery(query);
+  // Combine individual terms and whole phrases as separate search units
+  const searchUnits = [...terms, ...phrases].filter((u) => u.length >= 2);
+  if (searchUnits.length === 0) return [];
+  if (searchUnits.length === 1) return search(searchUnits[0]);
 
   const limit = allMetadata.length;
   const resultIds = new Set<string>();
 
-  for (const word of words) {
-    const docResults = docIndex.search(word, { limit });
+  for (const unit of searchUnits) {
+    const docResults = docIndex.search(unit, { limit });
     for (const fieldResult of docResults) {
       for (const id of fieldResult.result) {
         resultIds.add(String(id));
       }
     }
-    const transcriptResults = transcriptIndex.search(word, { limit });
+    const transcriptResults = transcriptIndex.search(unit, { limit });
     for (const id of transcriptResults) {
       resultIds.add(String(id));
     }

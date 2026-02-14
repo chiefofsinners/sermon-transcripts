@@ -91,7 +91,7 @@ function extractSnippets(
 
 export async function POST(request: NextRequest) {
   const body = await request.json();
-  const { ids, query } = body as { ids: unknown; query: unknown };
+  const { ids, query, mode } = body as { ids: unknown; query: unknown; mode?: string };
 
   if (!Array.isArray(ids) || typeof query !== "string" || !query.trim()) {
     return NextResponse.json({ error: "Invalid request" }, { status: 400 });
@@ -113,6 +113,7 @@ export async function POST(request: NextRequest) {
 
   if (hasPhrases) {
     // Phrase search — process all IDs concurrently with async reads
+    const requireAll = mode !== "any";
     const BATCH = 100;
     for (let i = 0; i < idsToCheck.length; i += BATCH) {
       const batch = idsToCheck.slice(i, i + BATCH);
@@ -128,10 +129,12 @@ export async function POST(request: NextRequest) {
             const moreInfo: string = sermon.moreInfoText || "";
             const lowerMoreInfo = moreInfo.replace(/\n+/g, " ").toLowerCase();
 
-            const hasAll = phrases.every((p) => lowerTranscript.includes(p) || lowerMoreInfo.includes(p));
-            if (!hasAll) {
-              result[id] = [];
-              return;
+            if (requireAll) {
+              const hasAll = phrases.every((p) => lowerTranscript.includes(p) || lowerMoreInfo.includes(p));
+              if (!hasAll) {
+                result[id] = [];
+                return;
+              }
             }
             result[id] = extractSnippets(transcript, needles, 2);
             // Fall back to moreInfoText when transcript has no matches
