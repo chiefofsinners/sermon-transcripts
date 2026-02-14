@@ -719,7 +719,7 @@ function HomeContent() {
   }, [query, hasPhrases, pageIds, searchMode]);
 
   return (
-      <div className="flex-1 max-w-3xl w-full min-h-dvh bg-gray-50 dark:bg-gray-950 mx-auto px-4 py-12">
+      <div className="flex-1 max-w-3xl w-full min-h-dvh bg-gray-50 dark:bg-gray-950 mx-auto px-4 py-6 sm:py-8">
         <header className="text-center mb-10">
           <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100 mb-2">
             {process.env.NEXT_PUBLIC_SITE_TITLE || "Sermon Transcripts"}
