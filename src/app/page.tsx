@@ -356,6 +356,15 @@ function HomeContent() {
 
   const handleModeChange = useCallback((mode: SearchMode) => {
     setSearchMode(mode);
+    // Clear stale snippets and mark as loading so baseFiltered doesn't
+    // run the phrase filter against data from the previous mode.
+    setSnippets({});
+    setSnippetsLoading(true);
+    // Reset snippet tracking refs so the page-level fetch knows it must
+    // refresh — the phrase fetch populates snippets but never updates these
+    // refs, leaving stale data that causes the page fetch to be skipped.
+    snippetQueryRef.current = '';
+    snippetModeRef.current = '';
     startTransition(() => {
       runSearch(inputValue, mode);
     });
