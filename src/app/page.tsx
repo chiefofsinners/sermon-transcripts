@@ -356,7 +356,7 @@ function HomeContent() {
 
   const handleModeChange = useCallback((mode: SearchMode) => {
     setSearchMode(mode);
-    setSnippets({});
+    setSnippetsLoading(true);
     startTransition(() => {
       runSearch(inputValue, mode);
     });
