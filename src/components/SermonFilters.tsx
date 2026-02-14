@@ -311,7 +311,31 @@ export default function SermonFilters({
             </ComboboxOptions>
           </Combobox>
 
-          <div className="inline-flex items-center gap-1.5">
+          <button
+            onClick={() => setShowPassagePicker(true)}
+            className={btnClass}
+          >
+            <span className="truncate max-w-48">
+              {passage ? passageDisplayLabel(passage) : "Passage"}
+            </span>
+            {passage ? (
+              <span
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onPassageChange("");
+                }}
+                className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </span>
+            ) : (
+              <ChevronDown />
+            )}
+          </button>
+
+          <div className="inline-flex flex-wrap items-center gap-1.5">
             <DatePicker
               value={dateFrom}
               onChange={onDateFromChange}
@@ -344,30 +368,6 @@ export default function SermonFilters({
               </span>
             )}
           </div>
-
-          <button
-            onClick={() => setShowPassagePicker(true)}
-            className={btnClass}
-          >
-            <span className="truncate max-w-48">
-              {passage ? passageDisplayLabel(passage) : "Passage"}
-            </span>
-            {passage ? (
-              <span
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onPassageChange("");
-                }}
-                className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
-              >
-                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </span>
-            ) : (
-              <ChevronDown />
-            )}
-          </button>
 
           {pickerBibleIndex && (
             <PassagePicker
