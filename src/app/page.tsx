@@ -404,6 +404,11 @@ function HomeContent() {
     setPage(1);
   }, []);
 
+  const handlePageChange = useCallback((p: number) => {
+    setPage(p);
+    window.scrollTo({ top: 0 });
+  }, []);
+
   const handlePageSizeChange = useCallback((v: number) => {
     setPageSize(v);
     setPage(1);
@@ -762,7 +767,7 @@ function HomeContent() {
             <Pagination
               page={page}
               totalPages={totalPages}
-              onPageChange={setPage}
+              onPageChange={handlePageChange}
             />
             <SearchResultList
               sermons={paginatedResults}
@@ -802,7 +807,7 @@ function HomeContent() {
             <Pagination
               page={page}
               totalPages={totalPages}
-              onPageChange={setPage}
+              onPageChange={handlePageChange}
             />
             <SermonList
               sermons={paginatedResults}
@@ -816,7 +821,7 @@ function HomeContent() {
         <Pagination
           page={page}
           totalPages={totalPages}
-          onPageChange={setPage}
+          onPageChange={handlePageChange}
         />
       </div>
   );
