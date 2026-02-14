@@ -356,7 +356,6 @@ function HomeContent() {
 
   const handleModeChange = useCallback((mode: SearchMode) => {
     setSearchMode(mode);
-    setSnippetsLoading(true);
     startTransition(() => {
       runSearch(inputValue, mode);
     });
@@ -656,6 +655,7 @@ function HomeContent() {
   const snippetsRef = useRef(snippets);
   snippetsRef.current = snippets;
   const snippetQueryRef = useRef(query);
+  const snippetModeRef = useRef(searchMode);
   useEffect(() => {
     if (pageDebounceRef.current) clearTimeout(pageDebounceRef.current);
 
@@ -664,9 +664,9 @@ function HomeContent() {
       return;
     }
 
-    // When query changes, all page IDs need fresh snippets regardless of cache
-    const queryChanged = query !== snippetQueryRef.current;
-    const missing = queryChanged
+    // When query or mode changes, all page IDs need fresh snippets regardless of cache
+    const needsRefresh = query !== snippetQueryRef.current || searchMode !== snippetModeRef.current;
+    const missing = needsRefresh
       ? [...pageIds]
       : pageIds.filter((id) => !(id in snippetsRef.current));
     if (missing.length === 0) return;
@@ -688,8 +688,9 @@ function HomeContent() {
         if (!res.ok) throw new Error("Snippet fetch failed");
         const data: Record<string, SermonSnippet[]> = await res.json();
         snippetQueryRef.current = query;
-        // Replace when query changed (stale data); merge when paginating same query
-        if (queryChanged) {
+        snippetModeRef.current = searchMode;
+        // Replace when refreshing (stale data); merge when paginating same query
+        if (needsRefresh) {
           setSnippets(data);
         } else {
           setSnippets((prev) => ({ ...prev, ...data }));
@@ -707,7 +708,7 @@ function HomeContent() {
     return () => {
       if (pageDebounceRef.current) clearTimeout(pageDebounceRef.current);
     };
-  }, [query, hasPhrases, pageIds]);
+  }, [query, hasPhrases, pageIds, searchMode]);
 
   return (
       <div className="flex-1 max-w-3xl w-full min-h-dvh bg-gray-50 dark:bg-gray-950 mx-auto px-4 py-12">
