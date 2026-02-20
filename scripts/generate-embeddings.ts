@@ -24,6 +24,10 @@ interface ChunkRecord {
     preacher: string;
     preachDate: string;
     bibleText: string;
+    series: string;
+    eventType: string;
+    keywords: string;
+    subtitle: string;
     chunkIndex: number;
   };
 }
@@ -121,6 +125,10 @@ function buildChunks(sermons: SermonData[]): ChunkRecord[] {
           preacher: sermon.preacher,
           preachDate: sermon.preachDate || "",
           bibleText: sermon.bibleText || "",
+          series: sermon.series || "",
+          eventType: sermon.eventType || "",
+          keywords: sermon.keywords || "",
+          subtitle: sermon.subtitle || "",
           chunkIndex: i,
         },
       });
@@ -132,8 +140,9 @@ function buildChunks(sermons: SermonData[]): ChunkRecord[] {
 /** Build the text sent to the embedding model — includes metadata so
  *  queries mentioning a preacher, title, or passage rank correctly. */
 function embeddingText(chunk: ChunkRecord): string {
-  const { title, preacher, bibleText } = chunk.metadata;
-  const header = [title, preacher, bibleText].filter(Boolean).join(" | ");
+  const m = chunk.metadata;
+  const parts = [m.title, m.preacher, m.bibleText, m.preachDate, m.series, m.subtitle, m.keywords];
+  const header = parts.filter(Boolean).join(" | ");
   return `${header}\n\n${chunk.text}`;
 }
 
