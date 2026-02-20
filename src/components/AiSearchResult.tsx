@@ -202,14 +202,14 @@ export default function AiSearchResult({ query }: { query: string }) {
   const handleProviderChange = useCallback((p: AiProvider) => {
     setProvider(p);
     providerRef.current = p;
-    if (!query.trim()) return;
+    // Only re-submit if we've already shown a response for this query
+    if (!query.trim() || !submitted) return;
 
     // Check cache before re-submitting
     const hit = readAiCache(query, p);
     if (hit) {
       setResponse(hit.response);
       setSources(hit.sources);
-      setSubmitted(true);
       setError(null);
       // Update lastProvider in the store
       writeAiCache(query, hit.response, hit.sources, p);
@@ -217,7 +217,7 @@ export default function AiSearchResult({ query }: { query: string }) {
     }
 
     handleSubmit(query);
-  }, [query, handleSubmit]);
+  }, [query, submitted, handleSubmit]);
 
   const providerPills = (
     <div className="flex gap-1 items-center">
