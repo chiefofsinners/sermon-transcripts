@@ -148,14 +148,30 @@ async function getExistingIds(index: ReturnType<Pinecone["index"]>, namespace: s
   return existing;
 }
 
+async function withRetry<T>(fn: () => Promise<T>, maxRetries = 5): Promise<T> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await fn();
+    } catch (err: unknown) {
+      const status = (err as { status?: number }).status;
+      if (status === 429 && attempt < maxRetries) {
+        const delay = Math.min(2 ** attempt * 1000, 60000);
+        console.log(`\n  Rate limited, waiting ${delay / 1000}s before retry...`);
+        await new Promise((r) => setTimeout(r, delay));
+        continue;
+      }
+      throw err;
+    }
+  }
+}
+
 async function generateEmbeddings(texts: string[]): Promise<number[][]> {
   const embeddings: number[][] = [];
   for (let i = 0; i < texts.length; i += EMBEDDING_BATCH_SIZE) {
     const batch = texts.slice(i, i + EMBEDDING_BATCH_SIZE);
-    const res = await openai.embeddings.create({
-      model: EMBEDDING_MODEL,
-      input: batch,
-    });
+    const res = await withRetry(() =>
+      openai.embeddings.create({ model: EMBEDDING_MODEL, input: batch })
+    );
     for (const item of res.data) {
       embeddings.push(item.embedding);
     }
