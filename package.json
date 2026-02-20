@@ -15,14 +15,14 @@
     "pipeline": "npm run download && npm run build"
   },
   "dependencies": {
+    "@ai-sdk/anthropic": "^3.0.46",
+    "@ai-sdk/openai": "^3.0.30",
+    "@ai-sdk/xai": "^3.0.57",
     "@google-cloud/speech": "^7.2.1",
     "@google-cloud/storage": "^7.19.0",
-    "@ai-sdk/anthropic": "^1.0.0",
-    "@ai-sdk/openai": "^1.0.0",
-    "@ai-sdk/xai": "^1.0.0",
     "@headlessui/react": "^2.2.9",
-    "ai": "^4.0.0",
     "@pinecone-database/pinecone": "^4.0.0",
+    "ai": "^6.0.94",
     "dotenv": "^17.2.4",
     "flexsearch": "^0.8.212",
     "next": "^16.1.6",

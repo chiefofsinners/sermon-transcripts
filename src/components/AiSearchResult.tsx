@@ -150,7 +150,7 @@ function AiSearchResultInner({ query }: { query: string }) {
       } catch {}
       setSources(finalSources);
 
-      // Handle Vercel AI SDK data stream
+      // Handle plain text stream from toTextStreamResponse
       const reader = res.body?.getReader();
       if (!reader) throw new Error("No response stream");
 
@@ -162,21 +162,10 @@ function AiSearchResultInner({ query }: { query: string }) {
         if (done) break;
 
         const chunk = decoder.decode(value, { stream: true });
-        // Vercel AI SDK data stream format: lines like `0:"text"\n`
-        const lines = chunk.split("\n");
-        for (const line of lines) {
-          if (line.startsWith("0:")) {
-            try {
-              const text = JSON.parse(line.slice(2));
-              accumulated += text;
-              // Strip any trailing ---SOURCES--- or --- the model might add
-              const display = accumulated.replace(/\n*---\s*SOURCES?\s*---[\s\S]*$/, "").replace(/\n*---\s*$/, "");
-              setResponse(display);
-            } catch {
-              // Skip malformed lines
-            }
-          }
-        }
+        accumulated += chunk;
+        // Strip any trailing ---SOURCES--- or --- the model might add
+        const display = accumulated.replace(/\n*---\s*SOURCES?\s*---[\s\S]*$/, "").replace(/\n*---\s*$/, "");
+        setResponse(display);
       }
 
       // Final cleanup of accumulated text
@@ -184,6 +173,9 @@ function AiSearchResultInner({ query }: { query: string }) {
         .replace(/\n*---\s*SOURCES?\s*---[\s\S]*$/, "")
         .replace(/\n*---\s*$/, "")
         .trim();
+      if (!finalResponse) {
+        throw new Error("No response received from the model. The request may have failed silently.");
+      }
       setResponse(finalResponse);
       writeAiCache(q.trim(), finalResponse, finalSources, providerRef.current);
     } catch (err) {

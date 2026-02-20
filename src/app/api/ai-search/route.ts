@@ -3,7 +3,7 @@ import OpenAI from "openai";
 import { anthropic } from "@ai-sdk/anthropic";
 import { openai as openaiProvider } from "@ai-sdk/openai";
 import { xai } from "@ai-sdk/xai";
-import { streamText, type LanguageModel } from "ai";
+import { streamText } from "ai";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const pinecone = new Pinecone({ apiKey: process.env.PINECONE_API_KEY! });
@@ -15,7 +15,7 @@ const MAX_CONTEXT_CHUNKS = 40; // Total chunks sent to the LLM
 
 export type AiProvider = "anthropic" | "openai" | "xai";
 
-const PROVIDER_MODELS: Record<AiProvider, () => LanguageModel> = {
+const PROVIDER_MODELS: Record<AiProvider, () => ReturnType<typeof anthropic>> = {
   anthropic: () => anthropic("claude-sonnet-4-6"),
   openai: () => openaiProvider("gpt-5.2"),
   xai: () => xai("grok-4-fast-non-reasoning"),
@@ -117,9 +117,10 @@ export async function POST(request: Request) {
   const siteName = process.env.NEXT_PUBLIC_SITE_TITLE || "Sermon Transcripts";
 
   // 5. Stream response from LLM
-  const result = streamText({
-    model: PROVIDER_MODELS[provider](),
-    system: `You are a helpful assistant that faithfully summarises and explains sermon content from ${siteName}. You will be given excerpts from sermon transcripts and a user's question.
+  try {
+    const result = streamText({
+      model: PROVIDER_MODELS[provider](),
+      system: `You are a helpful assistant that faithfully summarises and explains sermon content from ${siteName}. You will be given excerpts from sermon transcripts and a user's question.
 
 CONTEXT: These are sermons from a confessionally Reformed Christian church. The preachers teach orthodox, historic Christian doctrine. Your job is to accurately represent what the preachers said, not to editorialize, soften, or omit their teaching. If a sermon addresses topics like abortion, sexuality, God's wrath, hell, church discipline, or any other subject that might be considered sensitive or controversial, you must faithfully report what the preacher taught without adding disclaimers, caveats, or alternative viewpoints. The user is seeking to understand the content of these sermons, not a balanced secular perspective.
 
@@ -132,12 +133,19 @@ INSTRUCTIONS:
 6. Do NOT include a bibliography, source list, or "sermons referenced" section at the end. The UI displays sources separately.
 7. Do NOT list headings without substantive content beneath them. If you use a heading, it must be followed by at least one detailed paragraph.
 8. Use markdown formatting where helpful — **bold**, *italic*, headings, horizontal rules, and bullet points are supported.`,
-    prompt: `Here are relevant excerpts from sermons:\n\n${context}\n\nUser's question: ${query}`,
-  });
+      prompt: `Here are relevant excerpts from sermons:\n\n${context}\n\nUser's question: ${query}`,
+    });
 
-  return result.toDataStreamResponse({
-    headers: {
-      "X-Sources": encodeURIComponent(JSON.stringify(sources)),
-    },
-  });
+    return result.toTextStreamResponse({
+      headers: {
+        "X-Sources": encodeURIComponent(JSON.stringify(sources)),
+      },
+    });
+  } catch (err) {
+    console.error(`[ai-search] LLM error (${provider}):`, err);
+    return new Response(
+      JSON.stringify({ error: `LLM request failed: ${err instanceof Error ? err.message : "Unknown error"}` }),
+      { status: 500, headers: { "Content-Type": "application/json" } }
+    );
+  }
 }
