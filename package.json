@@ -17,6 +17,8 @@
     "@google-cloud/speech": "^7.2.1",
     "@google-cloud/storage": "^7.19.0",
     "@ai-sdk/anthropic": "^1.0.0",
+    "@ai-sdk/openai": "^1.0.0",
+    "@ai-sdk/xai": "^1.0.0",
     "@headlessui/react": "^2.2.9",
     "ai": "^4.0.0",
     "@pinecone-database/pinecone": "^4.0.0",

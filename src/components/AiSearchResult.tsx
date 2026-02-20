@@ -3,6 +3,14 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import Link from "next/link";
 
+type AiProvider = "anthropic" | "openai" | "xai";
+
+const AI_PROVIDERS: { value: AiProvider; label: string }[] = [
+  { value: "anthropic", label: "Claude" },
+  { value: "openai", label: "GPT" },
+  { value: "xai", label: "Grok" },
+];
+
 interface Source {
   sermonID: string;
   title: string;
@@ -52,7 +60,10 @@ export default function AiSearchResult({ query }: { query: string }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [submitted, setSubmitted] = useState(!!cached.current);
+  const [provider, setProvider] = useState<AiProvider>("anthropic");
   const abortRef = useRef<AbortController | null>(null);
+  const providerRef = useRef(provider);
+  providerRef.current = provider;
 
   const handleSubmit = useCallback(async (q: string) => {
     if (!q.trim()) return;
@@ -73,7 +84,7 @@ export default function AiSearchResult({ query }: { query: string }) {
       const res = await fetch("/api/ai-search", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query: q.trim() }),
+        body: JSON.stringify({ query: q.trim(), provider: providerRef.current }),
         signal: controller.signal,
       });
 
@@ -165,19 +176,53 @@ export default function AiSearchResult({ query }: { query: string }) {
     };
   }, []);
 
+  const handleProviderChange = useCallback((p: AiProvider) => {
+    setProvider(p);
+    // Re-submit with the new provider if there's a query
+    if (query.trim()) {
+      // Need to update the ref before handleSubmit reads it
+      providerRef.current = p;
+      handleSubmit(query);
+    }
+  }, [query, handleSubmit]);
+
+  const providerPills = (
+    <div className="flex gap-1 items-center">
+      <span className="text-xs text-gray-400 dark:text-gray-500 mr-1">Model:</span>
+      {AI_PROVIDERS.map((p) => (
+        <button
+          key={p.value}
+          type="button"
+          onClick={() => handleProviderChange(p.value)}
+          className={`px-2.5 py-1 text-xs rounded-full cursor-pointer transition-colors ${
+            provider === p.value
+              ? "bg-gray-300 text-gray-700 dark:bg-gray-700 dark:text-gray-300"
+              : "text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300"
+          }`}
+        >
+          {p.label}
+        </button>
+      ))}
+    </div>
+  );
+
   if (!submitted && !query.trim()) {
     return (
-      <div className="text-center py-12 text-gray-500 dark:text-gray-400">
-        <p className="text-lg mb-2">Ask a question about the sermons</p>
-        <p className="text-sm">
-          e.g. &ldquo;What does the Bible say about prayer?&rdquo; or &ldquo;What has been preached about justification by faith?&rdquo;
-        </p>
+      <div>
+        <div className="flex justify-end mb-4">{providerPills}</div>
+        <div className="text-center py-12 text-gray-500 dark:text-gray-400">
+          <p className="text-lg mb-2">Ask a question about the sermons</p>
+          <p className="text-sm">
+            e.g. &ldquo;What does the Bible say about prayer?&rdquo; or &ldquo;What has been preached about justification by faith?&rdquo;
+          </p>
+        </div>
       </div>
     );
   }
 
   return (
     <div className="mt-4">
+      <div className="flex justify-end mb-4">{providerPills}</div>
       {/* Loading indicator */}
       {loading && (
         <div className="flex items-center gap-2 mb-4 text-gray-500 dark:text-gray-400">

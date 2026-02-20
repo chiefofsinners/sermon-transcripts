@@ -1,13 +1,23 @@
 import { Pinecone } from "@pinecone-database/pinecone";
 import OpenAI from "openai";
 import { anthropic } from "@ai-sdk/anthropic";
-import { streamText } from "ai";
+import { openai as openaiProvider } from "@ai-sdk/openai";
+import { xai } from "@ai-sdk/xai";
+import { streamText, type LanguageModel } from "ai";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const pinecone = new Pinecone({ apiKey: process.env.PINECONE_API_KEY! });
 
 const EMBEDDING_MODEL = "text-embedding-3-small";
 const TOP_K = 10;
+
+export type AiProvider = "anthropic" | "openai" | "xai";
+
+const PROVIDER_MODELS: Record<AiProvider, () => LanguageModel> = {
+  anthropic: () => anthropic("claude-sonnet-4-20250514"),
+  openai: () => openaiProvider("gpt-4o"),
+  xai: () => xai("grok-3"),
+};
 
 interface ChunkMetadata {
   sermonID: string;
@@ -20,7 +30,9 @@ interface ChunkMetadata {
 }
 
 export async function POST(request: Request) {
-  const { query } = await request.json();
+  const { query, provider: rawProvider } = await request.json();
+  const provider: AiProvider =
+    rawProvider === "openai" || rawProvider === "xai" ? rawProvider : "anthropic";
 
   if (!query || typeof query !== "string" || query.trim().length === 0) {
     return new Response(JSON.stringify({ error: "Query is required" }), {
@@ -90,9 +102,9 @@ export async function POST(request: Request) {
 
   const siteName = process.env.NEXT_PUBLIC_SITE_TITLE || "Sermon Transcripts";
 
-  // 5. Stream response from Claude
+  // 5. Stream response from LLM
   const result = streamText({
-    model: anthropic("claude-sonnet-4-20250514"),
+    model: PROVIDER_MODELS[provider](),
     system: `You are a helpful assistant that answers questions about sermons from ${siteName}. Use ONLY the provided sermon excerpts to answer the user's question. If the excerpts don't contain relevant information, say so honestly.
 
 When referencing a sermon, cite it inline using the format [Sermon Title, Preacher] — these will be linked automatically. Be concise but thorough. Use markdown formatting where helpful.
