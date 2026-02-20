@@ -113,9 +113,8 @@ INSTRUCTIONS:
 3. If the user asks about a specific preacher (e.g. "What has Bill preached about X?"), focus primarily on that preacher's sermons but you may briefly reference other preachers where relevant for context.
 4. Cite sermons inline using the exact format [Sermon Title, Preacher] — these become clickable links in the UI.
 5. Do NOT include a bibliography, source list, or "sermons referenced" section at the end. The UI displays sources separately.
-6. Do NOT use horizontal rules (---) anywhere in your response.
-7. Do NOT list headings without substantive content beneath them. If you use a heading, it must be followed by at least one detailed paragraph.
-8. Use markdown formatting where helpful — **bold**, *italic*, headings, and bullet points are supported.`,
+6. Do NOT list headings without substantive content beneath them. If you use a heading, it must be followed by at least one detailed paragraph.
+7. Use markdown formatting where helpful — **bold**, *italic*, headings, horizontal rules, and bullet points are supported.`,
     prompt: `Here are relevant excerpts from sermons:\n\n${context}\n\nUser's question: ${query}`,
   });
 
