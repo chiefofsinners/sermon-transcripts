@@ -34,7 +34,7 @@ export default function SearchBar({
             e.preventDefault();
             onSubmit();
           }
-          if (e.key === '"' || e.key === "'") {
+          if (!showSend && (e.key === '"' || e.key === "'")) {
             const quote = e.key;
             const input = e.currentTarget;
             const pos = input.selectionStart ?? value.length;
