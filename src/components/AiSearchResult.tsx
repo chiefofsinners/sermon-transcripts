@@ -51,7 +51,10 @@ function readCacheStore(): AiCacheStore | null {
   try {
     const raw = sessionStorage.getItem(AI_CACHE_KEY);
     if (!raw) return null;
-    return JSON.parse(raw);
+    const parsed = JSON.parse(raw);
+    // Ignore old cache format (pre-multi-provider)
+    if (!parsed.entries) return null;
+    return parsed;
   } catch {}
   return null;
 }
