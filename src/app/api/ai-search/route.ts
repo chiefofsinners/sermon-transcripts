@@ -27,6 +27,7 @@ interface ChunkMetadata {
   preacher: string;
   preachDate: string;
   bibleText: string;
+  series: string;
   chunkIndex: number;
   text: string;
 }
@@ -66,11 +67,47 @@ export async function POST(request: Request) {
     .filter((m) => m.metadata)
     .map((m) => m.metadata as unknown as ChunkMetadata);
 
+  // Collect series IDs and sermon IDs from initial results so we can
+  // fetch sibling sermons that may not have ranked highly enough.
+  const matchedSermonIDs = new Set<string>();
+  const seriesIDs = new Set<string>();
+  for (const chunk of allChunks) {
+    matchedSermonIDs.add(chunk.sermonID);
+    if (chunk.series) seriesIDs.add(chunk.series);
+  }
+
+  // For each series found, query Pinecone for sibling sermons in the same
+  // series that weren't already in the initial results. We limit to the
+  // top chunks per series so siblings don't overwhelm the context.
+  const MAX_SERIES_SIBLING_CHUNKS = 12;
+  const seriesChunks: ChunkMetadata[] = [];
+  for (const seriesID of seriesIDs) {
+    const seriesResults = await ns.query({
+      vector: queryEmbedding,
+      topK: TOP_K,
+      includeMetadata: true,
+      filter: { series: { $eq: seriesID } },
+    });
+    let added = 0;
+    for (const m of seriesResults.matches ?? []) {
+      if (added >= MAX_SERIES_SIBLING_CHUNKS) break;
+      if (!m.metadata) continue;
+      const chunk = m.metadata as unknown as ChunkMetadata;
+      if (!matchedSermonIDs.has(chunk.sermonID)) {
+        seriesChunks.push(chunk);
+        added++;
+      }
+    }
+  }
+
+  // Merge: original results first, then series siblings
+  const combinedChunks = [...allChunks, ...seriesChunks];
+
   // Cap chunks per sermon so one sermon doesn't dominate the context,
   // while still allowing multiple chunks for richer coverage.
   const sermonChunkCounts = new Map<string, number>();
   const chunks: ChunkMetadata[] = [];
-  for (const chunk of allChunks) {
+  for (const chunk of combinedChunks) {
     const count = sermonChunkCounts.get(chunk.sermonID) ?? 0;
     if (count >= MAX_CHUNKS_PER_SERMON) continue;
     sermonChunkCounts.set(chunk.sermonID, count + 1);
