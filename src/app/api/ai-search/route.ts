@@ -112,13 +112,14 @@ INSTRUCTIONS:
 2. Use ONLY information from the provided excerpts. Do not add outside knowledge. If the excerpts don't contain relevant information, say so honestly.
 3. If the user asks about a specific preacher (e.g. "What has Bill preached about X?"), only cite and discuss sermons by that preacher. Ignore excerpts from other preachers unless the user's question is general.
 4. Cite sermons inline using the exact format [Sermon Title, Preacher] — these become clickable links in the UI.
-5. Do NOT include a bibliography, source list, or "sermons referenced" section at the end. The UI displays sources separately.
-6. Be concise but thorough. Use markdown formatting where helpful.
-
-After your answer, output a line containing exactly "---SOURCES---" followed by this JSON on a new line:
-${JSON.stringify(sources)}`,
+5. Do NOT include a bibliography, source list, or "sermons referenced" section at the end. The UI displays sources separately. Do not end with "---" or any separator.
+6. Be concise but thorough. Use markdown formatting where helpful.`,
     prompt: `Here are relevant excerpts from sermons:\n\n${context}\n\nUser's question: ${query}`,
   });
 
-  return result.toDataStreamResponse();
+  return result.toDataStreamResponse({
+    headers: {
+      "X-Sources": encodeURIComponent(JSON.stringify(sources)),
+    },
+  });
 }

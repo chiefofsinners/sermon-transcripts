@@ -128,6 +128,17 @@ export default function AiSearchResult({ query }: { query: string }) {
         return;
       }
 
+      // Read sources from response header
+      let finalSources: Source[] = [];
+      try {
+        const sourcesHeader = res.headers.get("X-Sources");
+        if (sourcesHeader) {
+          const parsed = JSON.parse(decodeURIComponent(sourcesHeader));
+          if (Array.isArray(parsed)) finalSources = parsed;
+        }
+      } catch {}
+      setSources(finalSources);
+
       // Handle Vercel AI SDK data stream
       const reader = res.body?.getReader();
       if (!reader) throw new Error("No response stream");
@@ -147,7 +158,9 @@ export default function AiSearchResult({ query }: { query: string }) {
             try {
               const text = JSON.parse(line.slice(2));
               accumulated += text;
-              setResponse(accumulated);
+              // Strip any trailing ---SOURCES--- or --- the model might add
+              const display = accumulated.replace(/\n*---\s*SOURCES?\s*---[\s\S]*$/, "").replace(/\n*---\s*$/, "");
+              setResponse(display);
             } catch {
               // Skip malformed lines
             }
@@ -155,22 +168,12 @@ export default function AiSearchResult({ query }: { query: string }) {
         }
       }
 
-      // Extract sources from the response (flexible match for model variations)
-      const markerMatch = accumulated.match(/---\s*SOURCES\s*---/);
-      let finalResponse = accumulated;
-      let finalSources: Source[] = [];
-      if (markerMatch && markerMatch.index !== undefined) {
-        finalResponse = accumulated.slice(0, markerMatch.index).trim();
-        const sourceJson = accumulated.slice(markerMatch.index + markerMatch[0].length).trim();
-        try {
-          const parsed = JSON.parse(sourceJson);
-          if (Array.isArray(parsed)) finalSources = parsed;
-        } catch {
-          // Sources may not parse — that's ok
-        }
-      }
+      // Final cleanup of accumulated text
+      const finalResponse = accumulated
+        .replace(/\n*---\s*SOURCES?\s*---[\s\S]*$/, "")
+        .replace(/\n*---\s*$/, "")
+        .trim();
       setResponse(finalResponse);
-      setSources(finalSources);
       writeAiCache(q.trim(), finalResponse, finalSources, providerRef.current);
     } catch (err) {
       if (err instanceof DOMException && err.name === "AbortError") return;
