@@ -16,7 +16,7 @@ const MAX_CONTEXT_CHUNKS = 40; // Total chunks sent to the LLM
 export type AiProvider = "anthropic" | "openai" | "xai";
 
 const PROVIDER_MODELS: Record<AiProvider, () => ReturnType<typeof anthropic>> = {
-  anthropic: () => anthropic("claude-sonnet-4-6"),
+  anthropic: () => anthropic("claude-haiku-4-5"),
   openai: () => openaiProvider("gpt-5.2"),
   xai: () => xai("grok-4-fast-non-reasoning"),
 };
