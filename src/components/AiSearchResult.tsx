@@ -2,6 +2,8 @@
 
 import { useState, useRef, useCallback, useEffect } from "react";
 import Link from "next/link";
+import ReadingSettingsProvider, { useReadingSettings } from "./ReadingSettingsProvider";
+import ReadingSettingsOverlay from "./ReadingSettingsOverlay";
 
 type AiProvider = "anthropic" | "openai" | "xai";
 
@@ -75,6 +77,15 @@ function writeAiCache(query: string, response: string, sources: Source[], provid
 }
 
 export default function AiSearchResult({ query }: { query: string }) {
+  return (
+    <ReadingSettingsProvider>
+      <AiSearchResultInner query={query} />
+    </ReadingSettingsProvider>
+  );
+}
+
+function AiSearchResultInner({ query }: { query: string }) {
+  const [showSettings, setShowSettings] = useState(false);
   const initStore = useRef(readCacheStore());
   const initProvider = initStore.current?.lastProvider ?? "anthropic";
   const cached = useRef(readAiCache(query, initProvider));
@@ -249,6 +260,17 @@ export default function AiSearchResult({ query }: { query: string }) {
           {p.label}
         </button>
       ))}
+      <button
+        type="button"
+        onClick={() => setShowSettings(true)}
+        aria-label="Reading settings"
+        className="ml-2 p-1.5 rounded-full text-gray-400 dark:text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-800 transition-colors cursor-pointer"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+          <circle cx="12" cy="12" r="3" />
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+        </svg>
+      </button>
     </div>
   );
 
@@ -343,6 +365,8 @@ export default function AiSearchResult({ query }: { query: string }) {
           </ul>
         </div>
       )}
+
+      {showSettings && <ReadingSettingsOverlay onClose={() => setShowSettings(false)} />}
     </div>
   );
 }
