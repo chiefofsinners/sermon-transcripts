@@ -21,12 +21,37 @@ function formatDate(dateStr: string): string {
   });
 }
 
+const AI_CACHE_KEY = "ai-search-cache";
+
+interface AiCache {
+  query: string;
+  response: string;
+  sources: Source[];
+}
+
+function readAiCache(query: string): AiCache | null {
+  try {
+    const raw = sessionStorage.getItem(AI_CACHE_KEY);
+    if (!raw) return null;
+    const cached: AiCache = JSON.parse(raw);
+    if (cached.query === query) return cached;
+  } catch {}
+  return null;
+}
+
+function writeAiCache(query: string, response: string, sources: Source[]) {
+  try {
+    sessionStorage.setItem(AI_CACHE_KEY, JSON.stringify({ query, response, sources }));
+  } catch {}
+}
+
 export default function AiSearchResult({ query }: { query: string }) {
-  const [response, setResponse] = useState("");
-  const [sources, setSources] = useState<Source[]>([]);
+  const cached = useRef(readAiCache(query));
+  const [response, setResponse] = useState(cached.current?.response ?? "");
+  const [sources, setSources] = useState<Source[]>(cached.current?.sources ?? []);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [submitted, setSubmitted] = useState(false);
+  const [submitted, setSubmitted] = useState(!!cached.current);
   const abortRef = useRef<AbortController | null>(null);
 
   const handleSubmit = useCallback(async (q: string) => {
@@ -99,17 +124,21 @@ export default function AiSearchResult({ query }: { query: string }) {
       // Extract sources from the response
       const sourceMarker = "---SOURCES---";
       const markerIndex = accumulated.indexOf(sourceMarker);
+      let finalResponse = accumulated;
+      let finalSources: Source[] = [];
       if (markerIndex !== -1) {
-        const mainText = accumulated.slice(0, markerIndex).trim();
+        finalResponse = accumulated.slice(0, markerIndex).trim();
         const sourceJson = accumulated.slice(markerIndex + sourceMarker.length).trim();
-        setResponse(mainText);
         try {
           const parsed = JSON.parse(sourceJson);
-          if (Array.isArray(parsed)) setSources(parsed);
+          if (Array.isArray(parsed)) finalSources = parsed;
         } catch {
           // Sources may not parse — that's ok
         }
       }
+      setResponse(finalResponse);
+      setSources(finalSources);
+      writeAiCache(q.trim(), finalResponse, finalSources);
     } catch (err) {
       if (err instanceof DOMException && err.name === "AbortError") return;
       setError(err instanceof Error ? err.message : "Something went wrong");
@@ -120,8 +149,8 @@ export default function AiSearchResult({ query }: { query: string }) {
     }
   }, []);
 
-  // Submit when query changes (from the search bar)
-  const lastQuery = useRef("");
+  // Submit when query changes (from the search bar), skip if restored from cache
+  const lastQuery = useRef(cached.current ? query : "");
   useEffect(() => {
     if (query.trim() && query !== lastQuery.current) {
       lastQuery.current = query;

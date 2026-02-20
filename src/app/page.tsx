@@ -587,9 +587,27 @@ function HomeContent() {
 
   // Save nav list for sermon detail page prev/next navigation
   useEffect(() => {
-    if (displayResults.length === 0) return;
     const params = new URLSearchParams();
     if (query.trim()) params.set("q", query.trim());
+    if (searchMode !== DEFAULT_SEARCH_MODE) params.set("mode", searchMode);
+
+    if (searchMode === "ai") {
+      // AI mode: no prev/next list, just save the back URL
+      const qs = params.toString();
+      try {
+        sessionStorage.setItem(
+          NAV_LIST_KEY,
+          JSON.stringify({
+            ids: [],
+            query: query.trim(),
+            searchUrl: qs ? `/?${qs}` : "/",
+          })
+        );
+      } catch {}
+      return;
+    }
+
+    if (displayResults.length === 0) return;
     if (page > 1) params.set("page", String(page));
     const navDefaultSort = query.trim() ? "best-match" : "date-desc";
     if (sortBy !== navDefaultSort) params.set("sort", sortBy);
@@ -600,7 +618,6 @@ function HomeContent() {
     if (filterDateFrom) params.set("dateFrom", filterDateFrom);
     if (filterDateTo) params.set("dateTo", filterDateTo);
     if (pageSize !== DEFAULT_PAGE_SIZE) params.set("pageSize", String(pageSize));
-    if (searchMode !== DEFAULT_SEARCH_MODE) params.set("mode", searchMode);
     const qs = params.toString();
     try {
       sessionStorage.setItem(

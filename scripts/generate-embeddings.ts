@@ -28,19 +28,75 @@ interface ChunkRecord {
   };
 }
 
-function chunkTranscript(transcript: string): string[] {
-  const words = transcript.split(/\s+/);
-  if (words.length <= CHUNK_SIZE) return [transcript];
+function wordCount(text: string): number {
+  return text.split(/\s+/).filter(Boolean).length;
+}
 
-  const chunks: string[] = [];
-  let start = 0;
-  while (start < words.length) {
-    const end = Math.min(start + CHUNK_SIZE, words.length);
-    chunks.push(words.slice(start, end).join(" "));
-    if (end >= words.length) break;
-    start += CHUNK_SIZE - CHUNK_OVERLAP;
+/**
+ * Split transcript into chunks of ~CHUNK_SIZE words, breaking at paragraph
+ * or sentence boundaries. Consecutive short paragraphs are merged together;
+ * long paragraphs are split at sentence boundaries within them.
+ */
+function chunkTranscript(transcript: string): string[] {
+  if (wordCount(transcript) <= CHUNK_SIZE) return [transcript.trim()];
+
+  // Split into paragraphs (double-newline or more)
+  const paragraphs = transcript.split(/\n\s*\n/).map((p) => p.trim()).filter(Boolean);
+
+  // Further split long paragraphs into sentences
+  const segments: string[] = [];
+  for (const para of paragraphs) {
+    if (wordCount(para) <= CHUNK_SIZE) {
+      segments.push(para);
+    } else {
+      // Split on sentence boundaries: period/question/exclamation followed by space + uppercase
+      const sentences = para.match(/[^.!?]*[.!?]+(?:\s|$)|[^.!?]+$/g) || [para];
+      for (const s of sentences) {
+        const trimmed = s.trim();
+        if (trimmed) segments.push(trimmed);
+      }
+    }
   }
+
+  // Greedily merge segments into chunks up to CHUNK_SIZE words
+  const chunks: string[] = [];
+  let current = "";
+  for (const segment of segments) {
+    const combined = current ? current + "\n\n" + segment : segment;
+    if (wordCount(combined) <= CHUNK_SIZE) {
+      current = combined;
+    } else {
+      // If the current buffer has content, flush it
+      if (current) {
+        chunks.push(current);
+        // Start next chunk with overlap: take trailing sentences from previous chunk
+        const overlapText = getOverlapSuffix(current, CHUNK_OVERLAP);
+        current = overlapText ? overlapText + "\n\n" + segment : segment;
+      } else {
+        // Single segment exceeds CHUNK_SIZE — include it as-is
+        chunks.push(segment);
+        current = "";
+      }
+    }
+  }
+  if (current) chunks.push(current);
+
   return chunks;
+}
+
+/** Extract roughly `targetWords` words from the end of text, snapping to sentence boundary. */
+function getOverlapSuffix(text: string, targetWords: number): string {
+  const sentences = text.match(/[^.!?]*[.!?]+(?:\s|$)|[^.!?]+$/g);
+  if (!sentences) return "";
+
+  let result = "";
+  // Walk backwards through sentences to build overlap
+  for (let i = sentences.length - 1; i >= 0; i--) {
+    const candidate = sentences[i].trim() + (result ? " " + result : "");
+    if (wordCount(candidate) > targetWords && result) break;
+    result = candidate;
+  }
+  return result;
 }
 
 function loadSermons(): SermonData[] {
@@ -110,13 +166,44 @@ async function generateEmbeddings(texts: string[]): Promise<number[][]> {
   return embeddings;
 }
 
+const DELETE_BATCH_SIZE = 1000;
+
+async function deleteAllVectors(index: ReturnType<Pinecone["index"]>, namespace: string) {
+  const ns = namespace ? index.namespace(namespace) : index;
+  try {
+    // Try deleteAll first (supported on most Pinecone plans)
+    await ns.deleteAll();
+    console.log("Deleted all existing vectors");
+    return;
+  } catch {
+    // Fall back to paginated delete
+  }
+
+  console.log("Deleting existing vectors in batches...");
+  const ids = await getExistingIds(index, namespace);
+  const allIds = [...ids];
+  for (let i = 0; i < allIds.length; i += DELETE_BATCH_SIZE) {
+    const batch = allIds.slice(i, i + DELETE_BATCH_SIZE);
+    await ns.deleteMany(batch);
+    process.stdout.write(`  Deleted ${Math.min(i + DELETE_BATCH_SIZE, allIds.length)}/${allIds.length}\r`);
+  }
+  console.log(`\nDeleted ${allIds.length} vectors`);
+}
+
 async function main() {
+  const rebuild = process.argv.includes("--rebuild");
   const indexName = process.env.PINECONE_INDEX || "sermon-transcripts";
   const namespace = process.env.PINECONE_NAMESPACE || "";
 
   console.log(`Using Pinecone index: ${indexName}${namespace ? `, namespace: ${namespace}` : ""}`);
+  if (rebuild) console.log("Rebuild mode: will delete all existing vectors first");
 
   const index = pinecone.index(indexName);
+
+  // In rebuild mode, clear the index before re-indexing
+  if (rebuild) {
+    await deleteAllVectors(index, namespace);
+  }
 
   // Load and chunk sermons
   const sermons = loadSermons();
