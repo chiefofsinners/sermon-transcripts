@@ -334,7 +334,7 @@ function AiSearchResultInner({ query }: { query: string }) {
 
       {/* AI Response */}
       {response && (
-        <div className="prose prose-sm dark:prose-invert max-w-none mb-6">
+        <div className="prose prose-sm dark:prose-invert max-w-none mb-6 text-justify">
           <ResponseMarkdown text={response} sources={sources} />
         </div>
       )}
@@ -394,7 +394,11 @@ function ResponseMarkdown({ text, sources }: { text: string; sources: Source[] }
         // Heading (strip leading #s)
         const headingMatch = trimmed.match(/^(#{1,4})\s+(.+?)$/m);
         if (headingMatch && trimmed.startsWith("#")) {
-          return <h3 key={i}>{processInline(headingMatch[2], sourceByTitle)}</h3>;
+          return (
+            <p key={i} className="font-semibold text-gray-900 dark:text-gray-100 mt-4 mb-1">
+              {processInline(headingMatch[2], sourceByTitle)}
+            </p>
+          );
         }
 
         // Bullet list
