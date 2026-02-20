@@ -80,7 +80,7 @@ async function classifyQuery(query: string): Promise<QueryScope> {
   try {
     const response = await openai.chat.completions.create({
       model: "gpt-4.1-nano",
-      max_tokens: 1,
+      max_tokens: 5,
       temperature: 0,
       messages: [
         {
