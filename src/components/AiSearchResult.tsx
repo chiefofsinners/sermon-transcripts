@@ -1,0 +1,325 @@
+"use client";
+
+import { useState, useRef, useCallback, useEffect } from "react";
+import Link from "next/link";
+
+interface Source {
+  sermonID: string;
+  title: string;
+  preacher: string;
+  preachDate: string;
+  bibleText: string;
+}
+
+function formatDate(dateStr: string): string {
+  if (!dateStr) return "";
+  const d = new Date(dateStr);
+  return d.toLocaleDateString("en-GB", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  });
+}
+
+export default function AiSearchResult({ query }: { query: string }) {
+  const [response, setResponse] = useState("");
+  const [sources, setSources] = useState<Source[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [submitted, setSubmitted] = useState(false);
+  const abortRef = useRef<AbortController | null>(null);
+
+  const handleSubmit = useCallback(async (q: string) => {
+    if (!q.trim()) return;
+
+    // Cancel any in-flight request
+    if (abortRef.current) abortRef.current.abort();
+
+    const controller = new AbortController();
+    abortRef.current = controller;
+
+    setLoading(true);
+    setError(null);
+    setResponse("");
+    setSources([]);
+    setSubmitted(true);
+
+    try {
+      const res = await fetch("/api/ai-search", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query: q.trim() }),
+        signal: controller.signal,
+      });
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || `Request failed (${res.status})`);
+      }
+
+      const contentType = res.headers.get("content-type") || "";
+
+      // Handle non-streaming JSON response (e.g. "no results" case)
+      if (contentType.includes("application/json")) {
+        const data = await res.json();
+        if (data.error) {
+          setResponse(data.error);
+        }
+        setLoading(false);
+        return;
+      }
+
+      // Handle Vercel AI SDK data stream
+      const reader = res.body?.getReader();
+      if (!reader) throw new Error("No response stream");
+
+      const decoder = new TextDecoder();
+      let accumulated = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        const chunk = decoder.decode(value, { stream: true });
+        // Vercel AI SDK data stream format: lines like `0:"text"\n`
+        const lines = chunk.split("\n");
+        for (const line of lines) {
+          if (line.startsWith("0:")) {
+            try {
+              const text = JSON.parse(line.slice(2));
+              accumulated += text;
+              setResponse(accumulated);
+            } catch {
+              // Skip malformed lines
+            }
+          }
+        }
+      }
+
+      // Extract sources from the response
+      const sourceMarker = "---SOURCES---";
+      const markerIndex = accumulated.indexOf(sourceMarker);
+      if (markerIndex !== -1) {
+        const mainText = accumulated.slice(0, markerIndex).trim();
+        const sourceJson = accumulated.slice(markerIndex + sourceMarker.length).trim();
+        setResponse(mainText);
+        try {
+          const parsed = JSON.parse(sourceJson);
+          if (Array.isArray(parsed)) setSources(parsed);
+        } catch {
+          // Sources may not parse — that's ok
+        }
+      }
+    } catch (err) {
+      if (err instanceof DOMException && err.name === "AbortError") return;
+      setError(err instanceof Error ? err.message : "Something went wrong");
+    } finally {
+      if (abortRef.current === controller) {
+        setLoading(false);
+      }
+    }
+  }, []);
+
+  // Submit when query changes (from the search bar)
+  const lastQuery = useRef("");
+  useEffect(() => {
+    if (query.trim() && query !== lastQuery.current) {
+      lastQuery.current = query;
+      handleSubmit(query);
+    }
+  }, [query, handleSubmit]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (abortRef.current) abortRef.current.abort();
+    };
+  }, []);
+
+  if (!submitted && !query.trim()) {
+    return (
+      <div className="text-center py-12 text-gray-500 dark:text-gray-400">
+        <p className="text-lg mb-2">Ask a question about the sermons</p>
+        <p className="text-sm">
+          e.g. &ldquo;What does the Bible say about prayer?&rdquo; or &ldquo;What has been preached about justification by faith?&rdquo;
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-4">
+      {/* Loading indicator */}
+      {loading && (
+        <div className="flex items-center gap-2 mb-4 text-gray-500 dark:text-gray-400">
+          <svg
+            className="animate-spin h-4 w-4"
+            xmlns="http://www.w3.org/2000/svg"
+            fill="none"
+            viewBox="0 0 24 24"
+          >
+            <circle
+              className="opacity-25"
+              cx="12"
+              cy="12"
+              r="10"
+              stroke="currentColor"
+              strokeWidth="4"
+            />
+            <path
+              className="opacity-75"
+              fill="currentColor"
+              d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+            />
+          </svg>
+          <span className="text-sm">Searching sermons and generating answer...</span>
+        </div>
+      )}
+
+      {/* Error state */}
+      {error && (
+        <div className="rounded-lg border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/20 p-4 mb-4">
+          <p className="text-red-700 dark:text-red-400 text-sm">{error}</p>
+          <button
+            onClick={() => handleSubmit(query)}
+            className="mt-2 text-sm text-red-600 dark:text-red-400 underline hover:no-underline cursor-pointer"
+          >
+            Try again
+          </button>
+        </div>
+      )}
+
+      {/* AI Response */}
+      {response && (
+        <div className="prose prose-sm dark:prose-invert max-w-none mb-6">
+          <ResponseMarkdown text={response} sources={sources} />
+        </div>
+      )}
+
+      {/* Sources list */}
+      {sources.length > 0 && !loading && (
+        <div className="border-t border-gray-200 dark:border-gray-800 pt-4 mt-6">
+          <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
+            Sources ({sources.length} sermons)
+          </h3>
+          <ul className="space-y-2">
+            {sources.map((s) => (
+              <li key={s.sermonID}>
+                <Link
+                  href={`/sermon/${s.sermonID}`}
+                  className="block rounded-lg border border-gray-200 dark:border-gray-800 p-3 hover:bg-gray-100 dark:hover:bg-gray-800/50 transition-colors"
+                >
+                  <span className="font-medium text-gray-900 dark:text-gray-100 text-sm">
+                    {s.title}
+                  </span>
+                  <span className="block text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                    {s.preacher}
+                    {s.bibleText && ` · ${s.bibleText}`}
+                    {s.preachDate && ` · ${formatDate(s.preachDate)}`}
+                  </span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Simple markdown-ish renderer that handles paragraphs, bold, and
+ * converts [Sermon Title, Preacher] citations into links when a matching source exists.
+ */
+function ResponseMarkdown({ text, sources }: { text: string; sources: Source[] }) {
+  // Build a lookup by title for citation linking
+  const sourceByTitle = new Map<string, Source>();
+  for (const s of sources) {
+    sourceByTitle.set(s.title.toLowerCase(), s);
+  }
+
+  const paragraphs = text.split(/\n\n+/);
+
+  return (
+    <>
+      {paragraphs.map((para, i) => {
+        const trimmed = para.trim();
+        if (!trimmed) return null;
+
+        // Heading
+        if (trimmed.startsWith("### ")) {
+          return <h3 key={i}>{processInline(trimmed.slice(4), sourceByTitle)}</h3>;
+        }
+        if (trimmed.startsWith("## ")) {
+          return <h3 key={i}>{processInline(trimmed.slice(3), sourceByTitle)}</h3>;
+        }
+
+        // Bullet list
+        if (trimmed.match(/^[-*] /m)) {
+          const items = trimmed.split(/\n/).filter((l) => l.match(/^[-*] /));
+          return (
+            <ul key={i}>
+              {items.map((item, j) => (
+                <li key={j}>{processInline(item.replace(/^[-*] /, ""), sourceByTitle)}</li>
+              ))}
+            </ul>
+          );
+        }
+
+        return <p key={i}>{processInline(trimmed.replace(/\n/g, " "), sourceByTitle)}</p>;
+      })}
+    </>
+  );
+}
+
+function processInline(
+  text: string,
+  sourceByTitle: Map<string, Source>
+): React.ReactNode {
+  // Match [Sermon Title, Preacher] citation patterns and **bold**
+  const parts: React.ReactNode[] = [];
+  // Combined regex: citations [Title, Author] or bold **text**
+  const pattern = /\[([^\]]+?),\s*([^\]]+?)\]|\*\*(.+?)\*\*/g;
+  let last = 0;
+  let match: RegExpExecArray | null;
+  let key = 0;
+
+  while ((match = pattern.exec(text)) !== null) {
+    if (match.index > last) {
+      parts.push(text.slice(last, match.index));
+    }
+
+    if (match[3] !== undefined) {
+      // Bold
+      parts.push(<strong key={key++}>{match[3]}</strong>);
+    } else {
+      // Citation
+      const title = match[1].trim();
+      const source = sourceByTitle.get(title.toLowerCase());
+      if (source) {
+        parts.push(
+          <Link
+            key={key++}
+            href={`/sermon/${source.sermonID}`}
+            className="text-blue-600 dark:text-blue-400 hover:underline"
+          >
+            {title}, {match[2].trim()}
+          </Link>
+        );
+      } else {
+        parts.push(
+          <span key={key++} className="text-blue-600 dark:text-blue-400">
+            [{title}, {match[2].trim()}]
+          </span>
+        );
+      }
+    }
+    last = match.index + match[0].length;
+  }
+
+  if (last < text.length) {
+    parts.push(text.slice(last));
+  }
+
+  return parts.length > 0 ? <>{parts}</> : text;
+}

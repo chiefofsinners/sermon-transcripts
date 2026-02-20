@@ -5,6 +5,7 @@ import { useSearchParams } from "next/navigation";
 import SearchBar from "@/components/SearchBar";
 import SermonList from "@/components/SermonList";
 import SearchResultList from "@/components/SearchResultList";
+import AiSearchResult from "@/components/AiSearchResult";
 import SermonFilters, { SortControl } from "@/components/SermonFilters";
 import type { SortBy, FilterOptions } from "@/components/SermonFilters";
 import Pagination from "@/components/Pagination";
@@ -17,6 +18,7 @@ const SEARCH_MODES: { value: SearchMode; label: string; shortLabel: string }[] =
   { value: "any", label: "Any word", shortLabel: "Any" },
   { value: "all", label: "All words", shortLabel: "All" },
   { value: "exact", label: "Exact phrase", shortLabel: "Exact" },
+  { value: "ai", label: "Ask AI", shortLabel: "AI" },
 ];
 
 const PAGE_SIZES = [10, 25, 50, 100] as const;
@@ -328,6 +330,8 @@ function HomeContent() {
   const runSearch = useCallback((q: string, mode: SearchMode) => {
     setQuery(q);
     setPage(1);
+    // AI mode handles its own search via the AiSearchResult component
+    if (mode === "ai") return;
     if (q.trim() !== "") {
       setSortBy((prev) => (prev === "date-desc" ? "best-match" : prev));
     } else {
@@ -356,6 +360,10 @@ function HomeContent() {
 
   const handleModeChange = useCallback((mode: SearchMode) => {
     setSearchMode(mode);
+    if (mode === "ai") {
+      // AI mode handles its own search — don't trigger FlexSearch
+      return;
+    }
     // Clear stale snippets and mark as loading so baseFiltered doesn't
     // run the phrase filter against data from the previous mode.
     setSnippets({});
@@ -734,7 +742,12 @@ function HomeContent() {
           <SearchBar value={inputValue} onChange={handleSearch} loading={loading} />
         </div>
 
-        {loading ? null : isSearching ? (
+        {loading ? null : searchMode === "ai" ? (
+          <>
+            <div className="flex justify-end mb-4">{modePills}</div>
+            <AiSearchResult query={inputValue} />
+          </>
+        ) : isSearching ? (
           <>
             {dynamicFilterOptions && (
               <SermonFilters
@@ -813,11 +826,21 @@ function HomeContent() {
           </>
         )}
 
+<<<<<<< Updated upstream
         <Pagination
           page={page}
           totalPages={totalPages}
           onPageChange={setPage}
         />
+=======
+        {searchMode !== "ai" && (
+          <Pagination
+            page={page}
+            totalPages={totalPages}
+            onPageChange={handlePageChange}
+          />
+        )}
+>>>>>>> Stashed changes
       </div>
   );
 }
