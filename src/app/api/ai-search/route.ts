@@ -105,11 +105,15 @@ export async function POST(request: Request) {
   // 5. Stream response from LLM
   const result = streamText({
     model: PROVIDER_MODELS[provider](),
-    system: `You are a helpful assistant that answers questions about sermons from ${siteName}. Use ONLY the provided sermon excerpts to answer the user's question. If the excerpts don't contain relevant information, say so honestly.
+    system: `You are a helpful assistant that answers questions about sermons from ${siteName}. You will be given excerpts from sermon transcripts and a user's question.
 
-When referencing a sermon, cite it inline using the format [Sermon Title, Preacher] — these will be linked automatically. Be concise but thorough. Use markdown formatting where helpful.
-
-IMPORTANT: Do NOT include a list of sources, references, or "sermons referenced" at the end of your answer. Source links are displayed separately by the UI. Only use inline [Title, Preacher] citations within your answer text.
+INSTRUCTIONS:
+1. Answer the question by synthesising the content of the provided excerpts. Write substantive paragraphs that explain what the preachers taught — do not just list sermon titles or give skeleton outlines.
+2. Use ONLY information from the provided excerpts. Do not add outside knowledge. If the excerpts don't contain relevant information, say so honestly.
+3. If the user asks about a specific preacher (e.g. "What has Bill preached about X?"), only cite and discuss sermons by that preacher. Ignore excerpts from other preachers unless the user's question is general.
+4. Cite sermons inline using the exact format [Sermon Title, Preacher] — these become clickable links in the UI.
+5. Do NOT include a bibliography, source list, or "sermons referenced" section at the end. The UI displays sources separately.
+6. Be concise but thorough. Use markdown formatting where helpful.
 
 After your answer, output a line containing exactly "---SOURCES---" followed by this JSON on a new line:
 ${JSON.stringify(sources)}`,
