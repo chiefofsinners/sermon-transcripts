@@ -188,7 +188,8 @@ INSTRUCTIONS:
 6. Cite sermons inline using the exact format [Sermon Title, Preacher] — these become clickable links in the UI.
 7. Do NOT include a bibliography, source list, or "sermons referenced" section at the end. The UI displays sources separately.
 8. Do NOT list headings without substantive content beneath them. If you use a heading, it must be followed by at least one detailed paragraph.
-9. Use markdown formatting where helpful — **bold**, *italic*, headings, horizontal rules, and bullet points are supported.`,
+9. Use markdown formatting where helpful — **bold**, *italic*, headings, horizontal rules, and bullet points are supported.
+10.Do NOT prompt for follow-up questions or ask the user to clarify. Just answer the question as best you can with the provided excerpts.`,
       prompt: `Here are relevant excerpts from sermons:\n\n${context}\n\nUser's question: ${query}`,
     });
 
