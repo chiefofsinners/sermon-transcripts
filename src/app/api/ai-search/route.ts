@@ -67,52 +67,70 @@ export async function POST(request: Request) {
     .filter((m) => m.metadata)
     .map((m) => m.metadata as unknown as ChunkMetadata);
 
-  // Collect series IDs and sermon IDs from initial results so we can
-  // fetch sibling sermons that may not have ranked highly enough.
-  const matchedSermonIDs = new Set<string>();
-  const seriesIDs = new Set<string>();
+  // Collect series IDs from the top-ranked initial results only (first
+  // few sermons), so we focus on series the query is actually about
+  // rather than every series that happens to appear in 80 chunks.
+  const topSeriesIDs = new Set<string>();
+  const seenSermons = new Set<string>();
+  const MAX_SERMONS_FOR_SERIES = 5;
   for (const chunk of allChunks) {
-    matchedSermonIDs.add(chunk.sermonID);
-    if (chunk.series) seriesIDs.add(chunk.series);
+    if (!seenSermons.has(chunk.sermonID)) {
+      seenSermons.add(chunk.sermonID);
+      if (chunk.series) topSeriesIDs.add(chunk.series);
+      if (seenSermons.size >= MAX_SERMONS_FOR_SERIES) break;
+    }
   }
 
-  // For each series found, query Pinecone for sibling sermons in the same
-  // series that weren't already in the initial results. We limit to the
-  // top chunks per series so siblings don't overwhelm the context.
-  const MAX_SERIES_SIBLING_CHUNKS = 12;
-  const seriesChunks: ChunkMetadata[] = [];
-  for (const seriesID of seriesIDs) {
+  // For each top series, query Pinecone for sibling sermons that weren't
+  // in the initial results. Build a map of sermonID -> chunks so we can
+  // interleave them with the initial results.
+  const MAX_SIBLING_CHUNKS_PER_SERMON = 3;
+  const siblingsBySermon = new Map<string, ChunkMetadata[]>();
+  const allMatchedSermonIDs = new Set(allChunks.map((c) => c.sermonID));
+
+  for (const seriesID of topSeriesIDs) {
     const seriesResults = await ns.query({
       vector: queryEmbedding,
       topK: TOP_K,
       includeMetadata: true,
       filter: { series: { $eq: seriesID } },
     });
-    let added = 0;
     for (const m of seriesResults.matches ?? []) {
-      if (added >= MAX_SERIES_SIBLING_CHUNKS) break;
       if (!m.metadata) continue;
       const chunk = m.metadata as unknown as ChunkMetadata;
-      if (!matchedSermonIDs.has(chunk.sermonID)) {
-        seriesChunks.push(chunk);
-        added++;
-      }
+      if (allMatchedSermonIDs.has(chunk.sermonID)) continue;
+      const existing = siblingsBySermon.get(chunk.sermonID) ?? [];
+      if (existing.length >= MAX_SIBLING_CHUNKS_PER_SERMON) continue;
+      existing.push(chunk);
+      siblingsBySermon.set(chunk.sermonID, existing);
     }
   }
 
-  // Merge: original results first, then series siblings
-  const combinedChunks = [...allChunks, ...seriesChunks];
+  const seriesSiblingChunks = [...siblingsBySermon.values()].flat();
 
-  // Cap chunks per sermon so one sermon doesn't dominate the context,
-  // while still allowing multiple chunks for richer coverage.
+  // Reserve slots for series siblings, then fill the rest from initial results.
+  const SIBLING_RESERVED = Math.min(seriesSiblingChunks.length, 12);
+  const mainBudget = MAX_CONTEXT_CHUNKS - SIBLING_RESERVED;
+
   const sermonChunkCounts = new Map<string, number>();
   const chunks: ChunkMetadata[] = [];
-  for (const chunk of combinedChunks) {
+
+  // Fill main budget from initial results
+  for (const chunk of allChunks) {
+    if (chunks.length >= mainBudget) break;
     const count = sermonChunkCounts.get(chunk.sermonID) ?? 0;
     if (count >= MAX_CHUNKS_PER_SERMON) continue;
     sermonChunkCounts.set(chunk.sermonID, count + 1);
     chunks.push(chunk);
+  }
+
+  // Add series sibling chunks into remaining slots
+  for (const chunk of seriesSiblingChunks) {
     if (chunks.length >= MAX_CONTEXT_CHUNKS) break;
+    const count = sermonChunkCounts.get(chunk.sermonID) ?? 0;
+    if (count >= MAX_CHUNKS_PER_SERMON) continue;
+    sermonChunkCounts.set(chunk.sermonID, count + 1);
+    chunks.push(chunk);
   }
 
   if (chunks.length === 0) {
