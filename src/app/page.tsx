@@ -329,6 +329,18 @@ function HomeContent() {
   const searchModeRef = useRef(searchMode);
   searchModeRef.current = searchMode;
 
+  const searchLogTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const logSearch = useCallback((q: string, type: string, mode?: string, provider?: string) => {
+    if (searchLogTimer.current) clearTimeout(searchLogTimer.current);
+    searchLogTimer.current = setTimeout(() => {
+      fetch("/api/search-log", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query: q, type, mode, provider }),
+      }).catch(() => {});
+    }, 1000);
+  }, []);
+
   const runSearch = useCallback((q: string, mode: SearchMode) => {
     setQuery(q);
     setPage(1);
@@ -343,9 +355,10 @@ function HomeContent() {
     if (q.trim() === "") {
       setResults(getAllSermons());
     } else {
+      logSearch(q, "standard", mode);
       setResults(mode === "any" ? searchAny(q) : searchAll(stripQuotes(q)));
     }
-  }, []);
+  }, [logSearch]);
 
   const handleSearch = useCallback((q: string) => {
     // Update input immediately so typing is never laggy
@@ -372,8 +385,9 @@ function HomeContent() {
       setAiQuery(inputValue.trim());
       setQuery(inputValue.trim());
       setAiSubmitCount((c) => c + 1);
+      logSearch(inputValue.trim(), "ai");
     }
-  }, [inputValue]);
+  }, [inputValue, logSearch]);
 
   const handleModeChange = useCallback((mode: SearchMode) => {
     setSearchMode(mode);
