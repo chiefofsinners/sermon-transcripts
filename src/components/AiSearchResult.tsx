@@ -391,6 +391,11 @@ function ResponseMarkdown({ text, sources }: { text: string; sources: Source[] }
         const trimmed = para.trim();
         if (!trimmed) return null;
 
+        // Horizontal rule
+        if (/^---+$/.test(trimmed)) {
+          return <hr key={i} className="border-gray-200 dark:border-gray-800 my-4" />;
+        }
+
         // Heading (strip leading #s)
         const headingMatch = trimmed.match(/^(#{1,4})\s+(.+?)$/m);
         if (headingMatch && trimmed.startsWith("#")) {
