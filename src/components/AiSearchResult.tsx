@@ -284,6 +284,7 @@ function AiSearchResultInner({ query }: { query: string }) {
             e.g. &ldquo;What does the Bible say about prayer?&rdquo; or &ldquo;What has been preached about justification by faith?&rdquo;
           </p>
         </div>
+        {showSettings && <ReadingSettingsOverlay onClose={() => setShowSettings(false)} />}
       </div>
     );
   }
