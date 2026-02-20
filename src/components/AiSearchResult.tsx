@@ -155,14 +155,13 @@ export default function AiSearchResult({ query }: { query: string }) {
         }
       }
 
-      // Extract sources from the response
-      const sourceMarker = "---SOURCES---";
-      const markerIndex = accumulated.indexOf(sourceMarker);
+      // Extract sources from the response (flexible match for model variations)
+      const markerMatch = accumulated.match(/---\s*SOURCES\s*---/);
       let finalResponse = accumulated;
       let finalSources: Source[] = [];
-      if (markerIndex !== -1) {
-        finalResponse = accumulated.slice(0, markerIndex).trim();
-        const sourceJson = accumulated.slice(markerIndex + sourceMarker.length).trim();
+      if (markerMatch && markerMatch.index !== undefined) {
+        finalResponse = accumulated.slice(0, markerMatch.index).trim();
+        const sourceJson = accumulated.slice(markerMatch.index + markerMatch[0].length).trim();
         try {
           const parsed = JSON.parse(sourceJson);
           if (Array.isArray(parsed)) finalSources = parsed;
