@@ -129,6 +129,14 @@ function buildChunks(sermons: SermonData[]): ChunkRecord[] {
   return chunks;
 }
 
+/** Build the text sent to the embedding model — includes metadata so
+ *  queries mentioning a preacher, title, or passage rank correctly. */
+function embeddingText(chunk: ChunkRecord): string {
+  const { title, preacher, bibleText } = chunk.metadata;
+  const header = [title, preacher, bibleText].filter(Boolean).join(" | ");
+  return `${header}\n\n${chunk.text}`;
+}
+
 async function getExistingIds(index: ReturnType<Pinecone["index"]>, namespace: string): Promise<Set<string>> {
   const existing = new Set<string>();
   try {
@@ -241,7 +249,7 @@ async function main() {
 
   // Generate embeddings
   console.log("Generating embeddings...");
-  const embeddings = await generateEmbeddings(newChunks.map((c) => c.text));
+  const embeddings = await generateEmbeddings(newChunks.map((c) => embeddingText(c)));
   console.log(`\nGenerated ${embeddings.length} embeddings`);
 
   // Upsert to Pinecone
