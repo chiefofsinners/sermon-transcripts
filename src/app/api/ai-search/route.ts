@@ -9,9 +9,6 @@ const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const pinecone = new Pinecone({ apiKey: process.env.PINECONE_API_KEY! });
 
 const EMBEDDING_MODEL = "text-embedding-3-small";
-const TOP_K = 80;
-const MAX_CHUNKS_PER_SERMON = 6; // Cap per sermon so one doesn't dominate
-const MAX_CONTEXT_CHUNKS = 40; // Total chunks sent to the LLM
 
 export type AiProvider = "anthropic" | "openai" | "xai";
 
@@ -32,6 +29,106 @@ interface ChunkMetadata {
   text: string;
 }
 
+interface ScoredChunk {
+  metadata: ChunkMetadata;
+  score: number;
+}
+
+// --- Budget profiles ---
+
+type QueryScope = "narrow" | "medium" | "broad";
+
+interface BudgetProfile {
+  topK: number;
+  maxContextChunks: number;
+  maxChunksPerSermon: number;
+  siblingReserve: number;
+  scoreFloor: number;
+  maxSermonsForSeries: number;
+}
+
+const BUDGET_PROFILES: Record<QueryScope, BudgetProfile> = {
+  narrow: {
+    topK: 60,
+    maxContextChunks: 25,
+    maxChunksPerSermon: 4,
+    siblingReserve: 6,
+    scoreFloor: 0.35,
+    maxSermonsForSeries: 3,
+  },
+  medium: {
+    topK: 80,
+    maxContextChunks: 50,
+    maxChunksPerSermon: 6,
+    siblingReserve: 12,
+    scoreFloor: 0.30,
+    maxSermonsForSeries: 5,
+  },
+  broad: {
+    topK: 120,
+    maxContextChunks: 80,
+    maxChunksPerSermon: 8,
+    siblingReserve: 18,
+    scoreFloor: 0.25,
+    maxSermonsForSeries: 7,
+  },
+};
+
+// --- Query classification ---
+
+async function classifyQuery(query: string): Promise<QueryScope> {
+  try {
+    const response = await openai.chat.completions.create({
+      model: "gpt-4.1-nano",
+      max_tokens: 5,
+      temperature: 0,
+      messages: [
+        {
+          role: "system",
+          content: `Classify the user's sermon search query into exactly one category. Reply with a single word: narrow, medium, or broad.
+
+narrow = a specific single sermon, a specific passage/quote, or a very focused preacher+topic question expecting one or two sermons
+medium = a theme or doctrine across several sermons, a preacher's teaching on a topic, summarising a series, or a preacher's general teaching
+broad = comparative across many sermons or multiple preachers, sweeping themes, "everything about X", or questions spanning the whole library`,
+        },
+        { role: "user", content: query },
+      ],
+    });
+
+    const raw = response.choices[0]?.message?.content?.trim().toLowerCase();
+    if (raw === "narrow" || raw === "medium" || raw === "broad") return raw;
+    console.log(`[ai-search] classifyQuery: unexpected response "${raw}", defaulting to medium`);
+    return "medium";
+  } catch (err) {
+    console.error("[ai-search] classifyQuery error, defaulting to medium:", err);
+    return "medium";
+  }
+}
+
+// --- Adaptive cutoff ---
+
+function findAdaptiveCutoff(scores: number[], maxContextChunks: number): number {
+  const minKeep = Math.max(8, Math.ceil(maxContextChunks * 0.3));
+  if (scores.length <= minKeep) return scores.length;
+
+  const GAP_THRESHOLD = 0.03;
+  let largestGap = 0;
+  let cutIndex = scores.length;
+
+  // Scores are in descending order. Scan for the largest gap beyond minKeep.
+  for (let i = minKeep; i < scores.length; i++) {
+    const gap = scores[i - 1] - scores[i];
+    if (gap > largestGap && gap >= GAP_THRESHOLD) {
+      largestGap = gap;
+      cutIndex = i;
+    }
+  }
+
+  return cutIndex;
+}
+
+// --- Main handler ---
+
 export async function POST(request: Request) {
   const { query, provider: rawProvider } = await request.json();
   const provider: AiProvider =
@@ -48,50 +145,71 @@ export async function POST(request: Request) {
   const namespace = process.env.PINECONE_NAMESPACE || "";
   const index = pinecone.index(indexName);
 
-  // 1. Embed the query
-  const embeddingRes = await openai.embeddings.create({
-    model: EMBEDDING_MODEL,
-    input: query.trim(),
-  });
+  // 1. Classify query and select budget (runs in parallel with embedding)
+  const [scope, embeddingRes] = await Promise.all([
+    classifyQuery(query.trim()),
+    openai.embeddings.create({
+      model: EMBEDDING_MODEL,
+      input: query.trim(),
+    }),
+  ]);
+
+  const budget = BUDGET_PROFILES[scope];
   const queryEmbedding = embeddingRes.data[0].embedding;
 
-  // 2. Query Pinecone
+  // 2. Query Pinecone with budget-driven topK
   const ns = namespace ? index.namespace(namespace) : index;
   const results = await ns.query({
     vector: queryEmbedding,
-    topK: TOP_K,
+    topK: budget.topK,
     includeMetadata: true,
   });
 
-  const allChunks = (results.matches ?? [])
-    .filter((m) => m.metadata)
-    .map((m) => m.metadata as unknown as ChunkMetadata);
+  // 3. Preserve scores alongside metadata
+  const allScoredChunks: ScoredChunk[] = (results.matches ?? [])
+    .filter((m) => m.metadata && typeof m.score === "number")
+    .map((m) => ({
+      metadata: m.metadata as unknown as ChunkMetadata,
+      score: m.score!,
+    }));
 
-  // Collect series IDs from the top-ranked initial results only (first
-  // few sermons), so we focus on series the query is actually about
-  // rather than every series that happens to appear in 80 chunks.
+  // 4. Score floor filter — remove low-quality matches
+  const flooredChunks = allScoredChunks.filter((c) => c.score >= budget.scoreFloor);
+
+  // 5. Adaptive gap cutoff — find natural cluster boundary
+  const scores = flooredChunks.map((c) => c.score);
+  const adaptiveCutoff = findAdaptiveCutoff(scores, budget.maxContextChunks);
+  const qualityChunks = flooredChunks.slice(0, adaptiveCutoff);
+
+  // Diagnostic logging
+  console.log(
+    `[ai-search] scope=${scope} | topK=${budget.topK} | raw=${allScoredChunks.length} | after floor(${budget.scoreFloor})=${flooredChunks.length} | after adaptive cutoff=${qualityChunks.length} | score range=${
+      allScoredChunks.length > 0
+        ? `${allScoredChunks[0].score.toFixed(3)}–${allScoredChunks[allScoredChunks.length - 1].score.toFixed(3)}`
+        : "n/a"
+    }`
+  );
+
+  // 6. Series expansion — collect series IDs from top-ranked results
   const topSeriesIDs = new Set<string>();
   const seenSermons = new Set<string>();
-  const MAX_SERMONS_FOR_SERIES = 5;
-  for (const chunk of allChunks) {
+  for (const { metadata: chunk } of qualityChunks) {
     if (!seenSermons.has(chunk.sermonID)) {
       seenSermons.add(chunk.sermonID);
       if (chunk.series) topSeriesIDs.add(chunk.series);
-      if (seenSermons.size >= MAX_SERMONS_FOR_SERIES) break;
+      if (seenSermons.size >= budget.maxSermonsForSeries) break;
     }
   }
 
-  // For each top series, query Pinecone for sibling sermons that weren't
-  // in the initial results. Build a map of sermonID -> chunks so we can
-  // interleave them with the initial results.
+  // For each top series, query Pinecone for sibling sermons not in initial results
   const MAX_SIBLING_CHUNKS_PER_SERMON = 3;
   const siblingsBySermon = new Map<string, ChunkMetadata[]>();
-  const allMatchedSermonIDs = new Set(allChunks.map((c) => c.sermonID));
+  const allMatchedSermonIDs = new Set(qualityChunks.map((c) => c.metadata.sermonID));
 
   for (const seriesID of topSeriesIDs) {
     const seriesResults = await ns.query({
       vector: queryEmbedding,
-      topK: TOP_K,
+      topK: budget.topK,
       includeMetadata: true,
       filter: { series: { $eq: seriesID } },
     });
@@ -108,30 +226,34 @@ export async function POST(request: Request) {
 
   const seriesSiblingChunks = [...siblingsBySermon.values()].flat();
 
-  // Reserve slots for series siblings, then fill the rest from initial results.
-  const SIBLING_RESERVED = Math.min(seriesSiblingChunks.length, 12);
-  const mainBudget = MAX_CONTEXT_CHUNKS - SIBLING_RESERVED;
+  // Reserve slots for series siblings, then fill the rest from initial results
+  const siblingReserved = Math.min(seriesSiblingChunks.length, budget.siblingReserve);
+  const mainBudget = budget.maxContextChunks - siblingReserved;
 
   const sermonChunkCounts = new Map<string, number>();
   const chunks: ChunkMetadata[] = [];
 
-  // Fill main budget from initial results
-  for (const chunk of allChunks) {
+  // Fill main budget from quality-filtered results
+  for (const { metadata: chunk } of qualityChunks) {
     if (chunks.length >= mainBudget) break;
     const count = sermonChunkCounts.get(chunk.sermonID) ?? 0;
-    if (count >= MAX_CHUNKS_PER_SERMON) continue;
+    if (count >= budget.maxChunksPerSermon) continue;
     sermonChunkCounts.set(chunk.sermonID, count + 1);
     chunks.push(chunk);
   }
 
   // Add series sibling chunks into remaining slots
   for (const chunk of seriesSiblingChunks) {
-    if (chunks.length >= MAX_CONTEXT_CHUNKS) break;
+    if (chunks.length >= budget.maxContextChunks) break;
     const count = sermonChunkCounts.get(chunk.sermonID) ?? 0;
-    if (count >= MAX_CHUNKS_PER_SERMON) continue;
+    if (count >= budget.maxChunksPerSermon) continue;
     sermonChunkCounts.set(chunk.sermonID, count + 1);
     chunks.push(chunk);
   }
+
+  console.log(
+    `[ai-search] final chunks=${chunks.length} (main=${Math.min(chunks.length, mainBudget)}, siblings=${Math.max(0, chunks.length - mainBudget)}) | sermons=${sermonChunkCounts.size}`
+  );
 
   if (chunks.length === 0) {
     return new Response(
@@ -140,7 +262,7 @@ export async function POST(request: Request) {
     );
   }
 
-  // 3. Deduplicate sources for citation
+  // 7. Deduplicate sources for citation
   const sourceMap = new Map<string, { title: string; preacher: string; preachDate: string; bibleText: string }>();
   for (const chunk of chunks) {
     if (!sourceMap.has(chunk.sermonID)) {
@@ -153,7 +275,7 @@ export async function POST(request: Request) {
     }
   }
 
-  // 4. Build context
+  // 8. Build context
   const context = chunks
     .map(
       (c, i) =>
@@ -171,7 +293,7 @@ export async function POST(request: Request) {
 
   const siteName = process.env.NEXT_PUBLIC_SITE_TITLE || "Sermon Transcripts";
 
-  // 5. Stream response from LLM
+  // 9. Stream response from LLM
   try {
     const result = streamText({
       model: PROVIDER_MODELS[provider](),
