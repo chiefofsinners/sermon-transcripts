@@ -35,6 +35,7 @@ interface AiCache {
   query: string;
   response: string;
   sources: Source[];
+  provider: AiProvider;
 }
 
 function readAiCache(query: string): AiCache | null {
@@ -47,9 +48,9 @@ function readAiCache(query: string): AiCache | null {
   return null;
 }
 
-function writeAiCache(query: string, response: string, sources: Source[]) {
+function writeAiCache(query: string, response: string, sources: Source[], provider: AiProvider) {
   try {
-    sessionStorage.setItem(AI_CACHE_KEY, JSON.stringify({ query, response, sources }));
+    sessionStorage.setItem(AI_CACHE_KEY, JSON.stringify({ query, response, sources, provider }));
   } catch {}
 }
 
@@ -60,7 +61,7 @@ export default function AiSearchResult({ query }: { query: string }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [submitted, setSubmitted] = useState(!!cached.current);
-  const [provider, setProvider] = useState<AiProvider>("anthropic");
+  const [provider, setProvider] = useState<AiProvider>(cached.current?.provider ?? "anthropic");
   const abortRef = useRef<AbortController | null>(null);
   const providerRef = useRef(provider);
   providerRef.current = provider;
@@ -149,7 +150,7 @@ export default function AiSearchResult({ query }: { query: string }) {
       }
       setResponse(finalResponse);
       setSources(finalSources);
-      writeAiCache(q.trim(), finalResponse, finalSources);
+      writeAiCache(q.trim(), finalResponse, finalSources, providerRef.current);
     } catch (err) {
       if (err instanceof DOMException && err.name === "AbortError") return;
       setError(err instanceof Error ? err.message : "Something went wrong");
@@ -375,14 +376,14 @@ function processInline(
           <Link
             key={key++}
             href={`/sermon/${source.sermonID}`}
-            className="text-blue-600 dark:text-blue-400 hover:underline"
+            className="text-gray-700 dark:text-gray-300 underline decoration-gray-400 dark:decoration-gray-500 hover:text-gray-900 dark:hover:text-gray-100"
           >
             {title}, {match[2].trim()}
           </Link>
         );
       } else {
         parts.push(
-          <span key={key++} className="text-blue-600 dark:text-blue-400">
+          <span key={key++} className="text-gray-700 dark:text-gray-300 underline decoration-gray-400 dark:decoration-gray-500">
             [{title}, {match[2].trim()}]
           </span>
         );
