@@ -87,9 +87,9 @@ async function classifyQuery(query: string): Promise<QueryScope> {
           role: "system",
           content: `Classify the user's sermon search query into exactly one category. Reply with a single word: narrow, medium, or broad.
 
-narrow = specific sermon, passage, quote, preacher+topic, or single event
-medium = theme/doctrine across a few sermons, or a preacher's general teaching
-broad = comparative across many sermons/preachers, sweeping themes, "everything about X"`,
+narrow = a specific single sermon, a specific passage/quote, or a very focused preacher+topic question expecting one or two sermons
+medium = a theme or doctrine across several sermons, a preacher's teaching on a topic, summarising a series, or a preacher's general teaching
+broad = comparative across many sermons or multiple preachers, sweeping themes, "everything about X", or questions spanning the whole library`,
         },
         { role: "user", content: query },
       ],
