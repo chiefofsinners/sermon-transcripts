@@ -85,6 +85,7 @@ function HomeContent() {
 
   const [query, setQuery] = useState(cached.current?.query ?? initialQuery);
   const [inputValue, setInputValue] = useState(query);
+  const [aiQuery, setAiQuery] = useState(initialMode === "ai" ? (cached.current?.query ?? initialQuery) : "");
   const [, startTransition] = useTransition();
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [results, setResults] = useState<SermonMeta[]>(() => {
@@ -349,6 +350,9 @@ function HomeContent() {
     // Update input immediately so typing is never laggy
     setInputValue(q);
 
+    // In AI mode, don't auto-search — wait for explicit submit
+    if (searchModeRef.current === "ai") return;
+
     // Debounce the expensive search/state updates
     if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
     searchDebounceRef.current = setTimeout(() => {
@@ -357,6 +361,13 @@ function HomeContent() {
       });
     }, 150);
   }, [runSearch]);
+
+  const handleAiSubmit = useCallback(() => {
+    if (inputValue.trim()) {
+      setAiQuery(inputValue.trim());
+      setQuery(inputValue.trim());
+    }
+  }, [inputValue]);
 
   const handleModeChange = useCallback((mode: SearchMode) => {
     setSearchMode(mode);
@@ -756,13 +767,19 @@ function HomeContent() {
         </header>
 
         <div className="mb-4">
-          <SearchBar value={inputValue} onChange={handleSearch} loading={loading} />
+          <SearchBar
+            value={inputValue}
+            onChange={handleSearch}
+            onSubmit={searchMode === "ai" ? handleAiSubmit : undefined}
+            loading={loading}
+            showSend={searchMode === "ai"}
+          />
         </div>
 
         {loading ? null : searchMode === "ai" ? (
           <>
             <div className="flex justify-end mb-4">{modePills}</div>
-            <AiSearchResult query={inputValue} />
+            <AiSearchResult query={aiQuery} />
           </>
         ) : isSearching ? (
           <>
