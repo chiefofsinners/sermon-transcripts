@@ -826,21 +826,13 @@ function HomeContent() {
           </>
         )}
 
-<<<<<<< Updated upstream
-        <Pagination
-          page={page}
-          totalPages={totalPages}
-          onPageChange={setPage}
-        />
-=======
         {searchMode !== "ai" && (
           <Pagination
             page={page}
             totalPages={totalPages}
-            onPageChange={handlePageChange}
+            onPageChange={setPage}
           />
         )}
->>>>>>> Stashed changes
       </div>
   );
 }
