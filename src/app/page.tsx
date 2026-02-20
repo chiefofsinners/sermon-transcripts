@@ -5,6 +5,7 @@ import { useSearchParams } from "next/navigation";
 import SearchBar from "@/components/SearchBar";
 import SermonList from "@/components/SermonList";
 import SearchResultList from "@/components/SearchResultList";
+import AiSearchResult from "@/components/AiSearchResult";
 import SermonFilters, { SortControl } from "@/components/SermonFilters";
 import type { SortBy, FilterOptions } from "@/components/SermonFilters";
 import Pagination from "@/components/Pagination";
@@ -17,6 +18,7 @@ const SEARCH_MODES: { value: SearchMode; label: string; shortLabel: string }[] =
   { value: "any", label: "Any word", shortLabel: "Any" },
   { value: "all", label: "All words", shortLabel: "All" },
   { value: "exact", label: "Exact phrase", shortLabel: "Exact" },
+  { value: "ai", label: "Ask AI", shortLabel: "AI" },
 ];
 
 const PAGE_SIZES = [10, 25, 50, 100] as const;
@@ -83,6 +85,8 @@ function HomeContent() {
 
   const [query, setQuery] = useState(cached.current?.query ?? initialQuery);
   const [inputValue, setInputValue] = useState(query);
+  const [aiQuery, setAiQuery] = useState(initialMode === "ai" ? (cached.current?.query ?? initialQuery) : "");
+  const [aiSubmitCount, setAiSubmitCount] = useState(0);
   const [, startTransition] = useTransition();
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [results, setResults] = useState<SermonMeta[]>(() => {
@@ -117,7 +121,7 @@ function HomeContent() {
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const skipSnippetFetch = useRef(!!cached.current?.query);
   const savedScrollY = useRef<number | null>(null);
-  if (savedScrollY.current === null) {
+  if (savedScrollY.current === null && cached.current) {
     try {
       const v = sessionStorage.getItem(SCROLL_KEY);
       if (v) savedScrollY.current = parseInt(v, 10);
@@ -325,9 +329,23 @@ function HomeContent() {
   const searchModeRef = useRef(searchMode);
   searchModeRef.current = searchMode;
 
+  const searchLogTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const logSearch = useCallback((q: string, type: string, mode?: string, provider?: string) => {
+    if (searchLogTimer.current) clearTimeout(searchLogTimer.current);
+    searchLogTimer.current = setTimeout(() => {
+      fetch("/api/search-log", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query: q, type, mode, provider }),
+      }).catch(() => {});
+    }, 1000);
+  }, []);
+
   const runSearch = useCallback((q: string, mode: SearchMode) => {
     setQuery(q);
     setPage(1);
+    // AI mode handles its own search via the AiSearchResult component
+    if (mode === "ai") return;
     if (q.trim() !== "") {
       setSortBy((prev) => (prev === "date-desc" ? "best-match" : prev));
     } else {
@@ -337,13 +355,21 @@ function HomeContent() {
     if (q.trim() === "") {
       setResults(getAllSermons());
     } else {
+      logSearch(q, "standard", mode);
       setResults(mode === "any" ? searchAny(q) : searchAll(stripQuotes(q)));
     }
-  }, []);
+  }, [logSearch]);
 
   const handleSearch = useCallback((q: string) => {
     // Update input immediately so typing is never laggy
     setInputValue(q);
+
+    // In AI mode, don't auto-search — wait for explicit submit
+    if (searchModeRef.current === "ai") {
+      // Clear resets the AI query so AiSearchResult aborts and resets
+      if (!q.trim()) setAiQuery("");
+      return;
+    }
 
     // Debounce the expensive search/state updates
     if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
@@ -354,8 +380,21 @@ function HomeContent() {
     }, 150);
   }, [runSearch]);
 
+  const handleAiSubmit = useCallback(() => {
+    if (inputValue.trim()) {
+      setAiQuery(inputValue.trim());
+      setQuery(inputValue.trim());
+      setAiSubmitCount((c) => c + 1);
+      logSearch(inputValue.trim(), "ai");
+    }
+  }, [inputValue, logSearch]);
+
   const handleModeChange = useCallback((mode: SearchMode) => {
     setSearchMode(mode);
+    if (mode === "ai") {
+      // AI mode handles its own search — don't trigger FlexSearch
+      return;
+    }
     // Clear stale snippets and mark as loading so baseFiltered doesn't
     // run the phrase filter against data from the previous mode.
     setSnippets({});
@@ -584,9 +623,27 @@ function HomeContent() {
 
   // Save nav list for sermon detail page prev/next navigation
   useEffect(() => {
-    if (displayResults.length === 0) return;
     const params = new URLSearchParams();
     if (query.trim()) params.set("q", query.trim());
+    if (searchMode !== DEFAULT_SEARCH_MODE) params.set("mode", searchMode);
+
+    if (searchMode === "ai") {
+      // AI mode: no prev/next list, just save the back URL
+      const qs = params.toString();
+      try {
+        sessionStorage.setItem(
+          NAV_LIST_KEY,
+          JSON.stringify({
+            ids: [],
+            query: query.trim(),
+            searchUrl: qs ? `/?${qs}` : "/",
+          })
+        );
+      } catch {}
+      return;
+    }
+
+    if (displayResults.length === 0) return;
     if (page > 1) params.set("page", String(page));
     const navDefaultSort = query.trim() ? "best-match" : "date-desc";
     if (sortBy !== navDefaultSort) params.set("sort", sortBy);
@@ -597,7 +654,6 @@ function HomeContent() {
     if (filterDateFrom) params.set("dateFrom", filterDateFrom);
     if (filterDateTo) params.set("dateTo", filterDateTo);
     if (pageSize !== DEFAULT_PAGE_SIZE) params.set("pageSize", String(pageSize));
-    if (searchMode !== DEFAULT_SEARCH_MODE) params.set("mode", searchMode);
     const qs = params.toString();
     try {
       sessionStorage.setItem(
@@ -736,10 +792,21 @@ function HomeContent() {
         </header>
 
         <div className="mb-4">
-          <SearchBar value={inputValue} onChange={handleSearch} loading={loading} />
+          <SearchBar
+            value={inputValue}
+            onChange={handleSearch}
+            onSubmit={searchMode === "ai" ? handleAiSubmit : undefined}
+            loading={loading}
+            showSend={searchMode === "ai"}
+          />
         </div>
 
-        {loading ? null : isSearching ? (
+        {loading ? null : searchMode === "ai" ? (
+          <>
+            <div className="flex justify-end mb-4">{modePills}</div>
+            <AiSearchResult query={aiQuery} submitCount={aiSubmitCount} />
+          </>
+        ) : isSearching ? (
           <>
             {dynamicFilterOptions && (
               <SermonFilters
@@ -818,11 +885,13 @@ function HomeContent() {
           </>
         )}
 
-        <Pagination
-          page={page}
-          totalPages={totalPages}
-          onPageChange={handlePageChange}
-        />
+        {searchMode !== "ai" && (
+          <Pagination
+            page={page}
+            totalPages={totalPages}
+            onPageChange={setPage}
+          />
+        )}
       </div>
   );
 }
