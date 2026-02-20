@@ -11,6 +11,7 @@
     "generate-index": "tsx scripts/generate-index.ts",
     "prebuild": "tsx scripts/generate-index.ts",
     "generate-embeddings": "tsx scripts/generate-embeddings.ts",
+    "rebuild-embeddings": "tsx scripts/generate-embeddings.ts --rebuild",
     "pipeline": "npm run download && npm run build"
   },
   "dependencies": {
