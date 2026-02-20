@@ -9,7 +9,7 @@ const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const pinecone = new Pinecone({ apiKey: process.env.PINECONE_API_KEY! });
 
 const EMBEDDING_MODEL = "text-embedding-3-small";
-const TOP_K = 10;
+const TOP_K = 30;
 
 export type AiProvider = "anthropic" | "openai" | "xai";
 
