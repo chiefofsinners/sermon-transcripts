@@ -14,9 +14,9 @@ const TOP_K = 10;
 export type AiProvider = "anthropic" | "openai" | "xai";
 
 const PROVIDER_MODELS: Record<AiProvider, () => LanguageModel> = {
-  anthropic: () => anthropic("claude-sonnet-4-20250514"),
-  openai: () => openaiProvider("gpt-4o"),
-  xai: () => xai("grok-3"),
+  anthropic: () => anthropic("claude-sonnet-4-6"),
+  openai: () => openaiProvider("gpt-5.2"),
+  xai: () => xai("grok-4-fast-non-reasoning"),
 };
 
 interface ChunkMetadata {
