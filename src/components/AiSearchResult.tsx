@@ -341,7 +341,7 @@ function AiSearchResultInner({ query }: { query: string }) {
 
       {/* Sources list */}
       {sources.length > 0 && !loading && (
-        <div className="border-t border-gray-200 dark:border-gray-800 pt-4 mt-6">
+        <div className="border-t border-gray-200 dark:border-gray-800 pt-4 mt-6 font-sans" style={{ fontFamily: "var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif" }}>
           <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
             Sources ({sources.length} sermons)
           </h3>
