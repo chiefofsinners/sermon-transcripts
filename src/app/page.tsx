@@ -86,6 +86,7 @@ function HomeContent() {
   const [query, setQuery] = useState(cached.current?.query ?? initialQuery);
   const [inputValue, setInputValue] = useState(query);
   const [aiQuery, setAiQuery] = useState(initialMode === "ai" ? (cached.current?.query ?? initialQuery) : "");
+  const [aiSubmitCount, setAiSubmitCount] = useState(0);
   const [, startTransition] = useTransition();
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [results, setResults] = useState<SermonMeta[]>(() => {
@@ -370,6 +371,7 @@ function HomeContent() {
     if (inputValue.trim()) {
       setAiQuery(inputValue.trim());
       setQuery(inputValue.trim());
+      setAiSubmitCount((c) => c + 1);
     }
   }, [inputValue]);
 
@@ -783,7 +785,7 @@ function HomeContent() {
         {loading ? null : searchMode === "ai" ? (
           <>
             <div className="flex justify-end mb-4">{modePills}</div>
-            <AiSearchResult query={aiQuery} />
+            <AiSearchResult query={aiQuery} submitCount={aiSubmitCount} />
           </>
         ) : isSearching ? (
           <>

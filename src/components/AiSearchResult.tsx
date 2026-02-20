@@ -76,15 +76,15 @@ function writeAiCache(query: string, response: string, sources: Source[], provid
   } catch {}
 }
 
-export default function AiSearchResult({ query }: { query: string }) {
+export default function AiSearchResult({ query, submitCount }: { query: string; submitCount?: number }) {
   return (
     <ReadingSettingsProvider>
-      <AiSearchResultInner query={query} />
+      <AiSearchResultInner query={query} submitCount={submitCount} />
     </ReadingSettingsProvider>
   );
 }
 
-function AiSearchResultInner({ query }: { query: string }) {
+function AiSearchResultInner({ query, submitCount }: { query: string; submitCount?: number }) {
   const [showSettings, setShowSettings] = useState(false);
   const initStore = useRef(readCacheStore());
   const initProvider = initStore.current?.lastProvider ?? "anthropic";
@@ -188,8 +188,10 @@ function AiSearchResultInner({ query }: { query: string }) {
     }
   }, []);
 
-  // Submit when query changes (from the search bar), skip if restored from cache
+  // Submit when query changes (from the search bar), skip if restored from cache.
+  // Also re-submit when submitCount bumps (user clicked send for same query).
   const lastQuery = useRef(cached.current ? query : "");
+  const lastSubmitCount = useRef(submitCount ?? 0);
   useEffect(() => {
     if (!query.trim()) {
       // Query cleared — abort and reset
@@ -202,11 +204,13 @@ function AiSearchResultInner({ query }: { query: string }) {
       lastQuery.current = "";
       return;
     }
-    if (query !== lastQuery.current) {
+    const countChanged = (submitCount ?? 0) !== lastSubmitCount.current;
+    if (query !== lastQuery.current || countChanged) {
       lastQuery.current = query;
+      lastSubmitCount.current = submitCount ?? 0;
       handleSubmit(query);
     }
-  }, [query, handleSubmit]);
+  }, [query, submitCount, handleSubmit]);
 
   // Cleanup on unmount
   useEffect(() => {
