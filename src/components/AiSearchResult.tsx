@@ -31,37 +31,56 @@ function formatDate(dateStr: string): string {
 
 const AI_CACHE_KEY = "ai-search-cache";
 
-interface AiCache {
-  query: string;
+interface AiCacheEntry {
   response: string;
   sources: Source[];
-  provider: AiProvider;
 }
 
-function readAiCache(query: string): AiCache | null {
+interface AiCacheStore {
+  // Keyed by "query\0provider"
+  entries: Record<string, AiCacheEntry>;
+  // Last used provider (for restoring selection on back-nav)
+  lastProvider: AiProvider;
+}
+
+function cacheKey(query: string, provider: AiProvider): string {
+  return `${query}\0${provider}`;
+}
+
+function readCacheStore(): AiCacheStore | null {
   try {
     const raw = sessionStorage.getItem(AI_CACHE_KEY);
     if (!raw) return null;
-    const cached: AiCache = JSON.parse(raw);
-    if (cached.query === query) return cached;
+    return JSON.parse(raw);
   } catch {}
   return null;
 }
 
+function readAiCache(query: string, provider: AiProvider): AiCacheEntry | null {
+  const store = readCacheStore();
+  if (!store) return null;
+  return store.entries[cacheKey(query, provider)] ?? null;
+}
+
 function writeAiCache(query: string, response: string, sources: Source[], provider: AiProvider) {
   try {
-    sessionStorage.setItem(AI_CACHE_KEY, JSON.stringify({ query, response, sources, provider }));
+    const store = readCacheStore() ?? { entries: {}, lastProvider: provider };
+    store.entries[cacheKey(query, provider)] = { response, sources };
+    store.lastProvider = provider;
+    sessionStorage.setItem(AI_CACHE_KEY, JSON.stringify(store));
   } catch {}
 }
 
 export default function AiSearchResult({ query }: { query: string }) {
-  const cached = useRef(readAiCache(query));
+  const initStore = useRef(readCacheStore());
+  const initProvider = initStore.current?.lastProvider ?? "anthropic";
+  const cached = useRef(readAiCache(query, initProvider));
   const [response, setResponse] = useState(cached.current?.response ?? "");
   const [sources, setSources] = useState<Source[]>(cached.current?.sources ?? []);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [submitted, setSubmitted] = useState(!!cached.current);
-  const [provider, setProvider] = useState<AiProvider>(cached.current?.provider ?? "anthropic");
+  const [provider, setProvider] = useState<AiProvider>(initProvider);
   const abortRef = useRef<AbortController | null>(null);
   const providerRef = useRef(provider);
   providerRef.current = provider;
@@ -179,12 +198,22 @@ export default function AiSearchResult({ query }: { query: string }) {
 
   const handleProviderChange = useCallback((p: AiProvider) => {
     setProvider(p);
-    // Re-submit with the new provider if there's a query
-    if (query.trim()) {
-      // Need to update the ref before handleSubmit reads it
-      providerRef.current = p;
-      handleSubmit(query);
+    providerRef.current = p;
+    if (!query.trim()) return;
+
+    // Check cache before re-submitting
+    const hit = readAiCache(query, p);
+    if (hit) {
+      setResponse(hit.response);
+      setSources(hit.sources);
+      setSubmitted(true);
+      setError(null);
+      // Update lastProvider in the store
+      writeAiCache(query, hit.response, hit.sources, p);
+      return;
     }
+
+    handleSubmit(query);
   }, [query, handleSubmit]);
 
   const providerPills = (
@@ -321,12 +350,10 @@ function ResponseMarkdown({ text, sources }: { text: string; sources: Source[] }
         const trimmed = para.trim();
         if (!trimmed) return null;
 
-        // Heading
-        if (trimmed.startsWith("### ")) {
-          return <h3 key={i}>{processInline(trimmed.slice(4), sourceByTitle)}</h3>;
-        }
-        if (trimmed.startsWith("## ")) {
-          return <h3 key={i}>{processInline(trimmed.slice(3), sourceByTitle)}</h3>;
+        // Heading (strip leading #s)
+        const headingMatch = trimmed.match(/^(#{2,4})\s+(.+)$/);
+        if (headingMatch) {
+          return <h3 key={i}>{processInline(headingMatch[2], sourceByTitle)}</h3>;
         }
 
         // Bullet list

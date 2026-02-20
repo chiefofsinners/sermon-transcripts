@@ -109,6 +109,8 @@ export async function POST(request: Request) {
 
 When referencing a sermon, cite it inline using the format [Sermon Title, Preacher] — these will be linked automatically. Be concise but thorough. Use markdown formatting where helpful.
 
+IMPORTANT: Do NOT include a list of sources, references, or "sermons referenced" at the end of your answer. Source links are displayed separately by the UI. Only use inline [Title, Preacher] citations within your answer text.
+
 After your answer, output a line containing exactly "---SOURCES---" followed by this JSON on a new line:
 ${JSON.stringify(sources)}`,
     prompt: `Here are relevant excerpts from sermons:\n\n${context}\n\nUser's question: ${query}`,
