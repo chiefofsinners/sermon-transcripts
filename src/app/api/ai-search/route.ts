@@ -9,7 +9,9 @@ const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const pinecone = new Pinecone({ apiKey: process.env.PINECONE_API_KEY! });
 
 const EMBEDDING_MODEL = "text-embedding-3-small";
-const TOP_K = 30;
+const TOP_K = 80;
+const MAX_CHUNKS_PER_SERMON = 6; // Cap per sermon so one doesn't dominate
+const MAX_CONTEXT_CHUNKS = 40; // Total chunks sent to the LLM
 
 export type AiProvider = "anthropic" | "openai" | "xai";
 
@@ -60,9 +62,21 @@ export async function POST(request: Request) {
     includeMetadata: true,
   });
 
-  const chunks = (results.matches ?? [])
+  const allChunks = (results.matches ?? [])
     .filter((m) => m.metadata)
     .map((m) => m.metadata as unknown as ChunkMetadata);
+
+  // Cap chunks per sermon so one sermon doesn't dominate the context,
+  // while still allowing multiple chunks for richer coverage.
+  const sermonChunkCounts = new Map<string, number>();
+  const chunks: ChunkMetadata[] = [];
+  for (const chunk of allChunks) {
+    const count = sermonChunkCounts.get(chunk.sermonID) ?? 0;
+    if (count >= MAX_CHUNKS_PER_SERMON) continue;
+    sermonChunkCounts.set(chunk.sermonID, count + 1);
+    chunks.push(chunk);
+    if (chunks.length >= MAX_CONTEXT_CHUNKS) break;
+  }
 
   if (chunks.length === 0) {
     return new Response(
