@@ -120,7 +120,7 @@ function HomeContent() {
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const skipSnippetFetch = useRef(!!cached.current?.query);
   const savedScrollY = useRef<number | null>(null);
-  if (savedScrollY.current === null) {
+  if (savedScrollY.current === null && cached.current) {
     try {
       const v = sessionStorage.getItem(SCROLL_KEY);
       if (v) savedScrollY.current = parseInt(v, 10);
