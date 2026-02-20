@@ -365,8 +365,8 @@ function ResponseMarkdown({ text, sources }: { text: string; sources: Source[] }
         if (!trimmed) return null;
 
         // Heading (strip leading #s)
-        const headingMatch = trimmed.match(/^(#{2,4})\s+(.+)$/);
-        if (headingMatch) {
+        const headingMatch = trimmed.match(/^(#{1,4})\s+(.+?)$/m);
+        if (headingMatch && trimmed.startsWith("#")) {
           return <h3 key={i}>{processInline(headingMatch[2], sourceByTitle)}</h3>;
         }
 
@@ -392,10 +392,10 @@ function processInline(
   text: string,
   sourceByTitle: Map<string, Source>
 ): React.ReactNode {
-  // Match [Sermon Title, Preacher] citation patterns and **bold**
+  // Match [Sermon Title, Preacher] citation patterns, **bold**, and *italic*
   const parts: React.ReactNode[] = [];
-  // Combined regex: citations [Title, Author] or bold **text**
-  const pattern = /\[([^\]]+?),\s*([^\]]+?)\]|\*\*(.+?)\*\*/g;
+  // Combined regex: citations [Title, Author], bold **text**, or italic *text*
+  const pattern = /\[([^\]]+?),\s*([^\]]+?)\]|\*\*(.+?)\*\*|\*(.+?)\*/g;
   let last = 0;
   let match: RegExpExecArray | null;
   let key = 0;
@@ -408,6 +408,9 @@ function processInline(
     if (match[3] !== undefined) {
       // Bold
       parts.push(<strong key={key++}>{match[3]}</strong>);
+    } else if (match[4] !== undefined) {
+      // Italic
+      parts.push(<em key={key++}>{match[4]}</em>);
     } else {
       // Citation
       const title = match[1].trim();
