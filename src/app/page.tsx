@@ -351,7 +351,11 @@ function HomeContent() {
     setInputValue(q);
 
     // In AI mode, don't auto-search — wait for explicit submit
-    if (searchModeRef.current === "ai") return;
+    if (searchModeRef.current === "ai") {
+      // Clear resets the AI query so AiSearchResult aborts and resets
+      if (!q.trim()) setAiQuery("");
+      return;
+    }
 
     // Debounce the expensive search/state updates
     if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);

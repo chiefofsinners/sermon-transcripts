@@ -186,7 +186,18 @@ export default function AiSearchResult({ query }: { query: string }) {
   // Submit when query changes (from the search bar), skip if restored from cache
   const lastQuery = useRef(cached.current ? query : "");
   useEffect(() => {
-    if (query.trim() && query !== lastQuery.current) {
+    if (!query.trim()) {
+      // Query cleared — abort and reset
+      if (abortRef.current) abortRef.current.abort();
+      setResponse("");
+      setSources([]);
+      setLoading(false);
+      setError(null);
+      setSubmitted(false);
+      lastQuery.current = "";
+      return;
+    }
+    if (query !== lastQuery.current) {
       lastQuery.current = query;
       handleSubmit(query);
     }
