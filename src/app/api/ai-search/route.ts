@@ -43,7 +43,6 @@ interface BudgetProfile {
   maxContextChunks: number;
   maxChunksPerSermon: number;
   siblingReserve: number;
-  scoreFloor: number;
   maxSermonsForSeries: number;
 }
 
@@ -53,7 +52,6 @@ const BUDGET_PROFILES: Record<QueryScope, BudgetProfile> = {
     maxContextChunks: 25,
     maxChunksPerSermon: 4,
     siblingReserve: 6,
-    scoreFloor: 0.35,
     maxSermonsForSeries: 3,
   },
   medium: {
@@ -61,7 +59,6 @@ const BUDGET_PROFILES: Record<QueryScope, BudgetProfile> = {
     maxContextChunks: 50,
     maxChunksPerSermon: 6,
     siblingReserve: 12,
-    scoreFloor: 0.30,
     maxSermonsForSeries: 5,
   },
   broad: {
@@ -69,7 +66,6 @@ const BUDGET_PROFILES: Record<QueryScope, BudgetProfile> = {
     maxContextChunks: 80,
     maxChunksPerSermon: 8,
     siblingReserve: 18,
-    scoreFloor: 0.25,
     maxSermonsForSeries: 7,
   },
 };
@@ -173,17 +169,14 @@ export async function POST(request: Request) {
       score: m.score!,
     }));
 
-  // 4. Score floor filter — remove low-quality matches
-  const flooredChunks = allScoredChunks.filter((c) => c.score >= budget.scoreFloor);
-
-  // 5. Adaptive gap cutoff — find natural cluster boundary
-  const scores = flooredChunks.map((c) => c.score);
+  // 4. Adaptive gap cutoff — find natural cluster boundary
+  const scores = allScoredChunks.map((c) => c.score);
   const adaptiveCutoff = findAdaptiveCutoff(scores, budget.maxContextChunks);
-  const qualityChunks = flooredChunks.slice(0, adaptiveCutoff);
+  const qualityChunks = allScoredChunks.slice(0, adaptiveCutoff);
 
   // Diagnostic logging
   console.log(
-    `[ai-search] scope=${scope} | topK=${budget.topK} | raw=${allScoredChunks.length} | after floor(${budget.scoreFloor})=${flooredChunks.length} | after adaptive cutoff=${qualityChunks.length} | score range=${
+    `[ai-search] scope=${scope} | topK=${budget.topK} | raw=${allScoredChunks.length} | after adaptive cutoff=${qualityChunks.length} | score range=${
       allScoredChunks.length > 0
         ? `${allScoredChunks[0].score.toFixed(3)}–${allScoredChunks[allScoredChunks.length - 1].score.toFixed(3)}`
         : "n/a"
