@@ -244,7 +244,7 @@ function AiSearchResultInner({ query }: { query: string }) {
   }, [query, submitted, handleSubmit]);
 
   const providerPills = (
-    <div className="flex gap-1 items-center">
+    <div className="flex gap-1 items-center font-sans" style={{ fontFamily: "var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif" }}>
       <span className="text-xs text-gray-400 dark:text-gray-500 mr-1">Model:</span>
       {AI_PROVIDERS.map((p) => (
         <button
