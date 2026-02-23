@@ -358,8 +358,8 @@ function AiSearchResultInner({ query, submitCount }: { query: string; submitCoun
       <div>
         <div className="flex justify-end mb-4">{providerPills}</div>
         <div className="text-center py-12 text-gray-500 dark:text-gray-400">
-          <p className="text-lg mb-2">Ask a question about the sermons</p>
-          <p className="text-sm">
+          <p className="mb-2" style={{ fontSize: "1.1em" }}>Ask a question about the sermons</p>
+          <p style={{ fontSize: "0.85em" }}>
             e.g. &ldquo;What does the Bible say about prayer?&rdquo; or &ldquo;What has been preached about justification by faith?&rdquo;
           </p>
         </div>
