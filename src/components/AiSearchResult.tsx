@@ -192,16 +192,22 @@ function AiSearchResultInner({ query, submitCount }: { query: string; submitCoun
 
     const decoder = new TextDecoder();
     let accumulated = "";
+    let streamError: string | null = null;
 
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
 
-      const chunk = decoder.decode(value, { stream: true });
-      accumulated += chunk;
-      // Strip any trailing ---SOURCES--- or --- the model might add
-      const display = accumulated.replace(/\n*---\s*SOURCES?\s*---[\s\S]*$/, "").replace(/\n*---\s*$/, "");
-      setResponse(display);
+        const chunk = decoder.decode(value, { stream: true });
+        accumulated += chunk;
+        // Strip any trailing ---SOURCES--- or --- the model might add
+        const display = accumulated.replace(/\n*---\s*SOURCES?\s*---[\s\S]*$/, "").replace(/\n*---\s*$/, "");
+        setResponse(display);
+      }
+    } catch (readErr) {
+      if (readErr instanceof DOMException && readErr.name === "AbortError") throw readErr;
+      streamError = readErr instanceof Error ? readErr.message : "Stream interrupted";
     }
 
     // Final cleanup of accumulated text
@@ -210,7 +216,12 @@ function AiSearchResultInner({ query, submitCount }: { query: string; submitCoun
       .replace(/\n*---\s*$/, "")
       .trim();
     if (!finalResponse) {
-      throw new Error("No response received from the model. The request may have failed silently.");
+      const providerName = { anthropic: "Claude", openai: "GPT", xai: "Grok" }[providerRef.current] || "The model";
+      throw new Error(
+        streamError
+          ? `${providerName} encountered an error: ${streamError}`
+          : `${providerName} is currently unavailable. Try again or switch to a different model.`
+      );
     }
     setResponse(finalResponse);
     writeAiCache(q, finalResponse, ctx.sources, providerRef.current);
