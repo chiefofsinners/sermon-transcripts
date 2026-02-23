@@ -8,7 +8,7 @@ import type { SermonData } from "../src/lib/types";
 const DATA_DIR = join(process.cwd(), "data", "sermons");
 const CHUNK_SIZE = 500; // words
 const CHUNK_OVERLAP = 50; // words
-const EMBEDDING_MODEL = "text-embedding-3-small";
+const EMBEDDING_MODEL = process.env.EMBEDDING_MODEL || "text-embedding-3-small";
 const EMBEDDING_BATCH_SIZE = 100;
 const UPSERT_BATCH_SIZE = 100;
 
