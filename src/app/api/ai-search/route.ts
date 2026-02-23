@@ -8,14 +8,15 @@ import { streamText } from "ai";
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const pinecone = new Pinecone({ apiKey: process.env.PINECONE_API_KEY! });
 
-const EMBEDDING_MODEL = "text-embedding-3-small";
+const EMBEDDING_MODEL = process.env.EMBEDDING_MODEL || "text-embedding-3-small";
+const AI_UTILITY_MODEL = process.env.AI_UTILITY_MODEL || "gpt-5-nano";
 
 export type AiProvider = "anthropic" | "openai" | "xai";
 
 const PROVIDER_MODELS: Record<AiProvider, () => ReturnType<typeof anthropic>> = {
-  anthropic: () => anthropic("claude-haiku-4-5"),
-  openai: () => openaiProvider("gpt-5.2"),
-  xai: () => xai("grok-4-fast-non-reasoning"),
+  anthropic: () => anthropic(process.env.AI_SEARCH_MODEL_ANTHROPIC || "claude-haiku-4-5"),
+  openai: () => openaiProvider(process.env.AI_SEARCH_MODEL_OPENAI || "gpt-5.2"),
+  xai: () => xai(process.env.AI_SEARCH_MODEL_XAI || "grok-4-fast-non-reasoning"),
 };
 
 interface ChunkMetadata {
@@ -75,8 +76,8 @@ const BUDGET_PROFILES: Record<QueryScope, BudgetProfile> = {
 async function expandQuery(query: string): Promise<string> {
   try {
     const response = await openai.chat.completions.create({
-      model: "gpt-5-nano",
-      max_tokens: 120,
+      model: AI_UTILITY_MODEL,
+      max_completion_tokens: 120,
       temperature: 0,
       messages: [
         {
@@ -108,8 +109,8 @@ Keep the original query terms. Add related terms naturally. Do not explain — j
 async function classifyQuery(query: string): Promise<QueryScope> {
   try {
     const response = await openai.chat.completions.create({
-      model: "gpt-4.1-nano",
-      max_tokens: 5,
+      model: AI_UTILITY_MODEL,
+      max_completion_tokens: 5,
       temperature: 0,
       messages: [
         {
