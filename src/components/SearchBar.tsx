@@ -52,7 +52,7 @@ export default function SearchBar({
             }
           }
         }}
-        placeholder={loading ? "Loading search index..." : "Search sermons..."}
+        placeholder={loading ? "Loading search index..." : showSend ? "Ask a question..." : "Search sermons..."}
         disabled={loading}
         className={`w-full pl-5 ${showSend ? "pr-22" : "pr-12"} py-3.5 text-lg border border-gray-300 dark:border-gray-600 rounded-lg
                    focus:outline-none focus:ring-2 focus:ring-gray-400 dark:focus:ring-gray-500 focus:border-transparent
