@@ -281,6 +281,7 @@ function HomeContent() {
     // Non-phrase queries handle snippets separately (page-level fetch below)
     if (!hasPhrases) {
       if (abortRef.current) { abortRef.current.abort(); abortRef.current = null; }
+      setSnippetsLoading(false);
       return;
     }
 
