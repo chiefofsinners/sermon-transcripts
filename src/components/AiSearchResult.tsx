@@ -76,6 +76,14 @@ function writeAiCache(query: string, response: string, sources: Source[], provid
   } catch {}
 }
 
+// In-memory cache for context (persists across provider switches within the same page lifecycle)
+interface ContextCache {
+  query: string;
+  context: string;
+  sources: Source[];
+  scope: string;
+}
+
 export default function AiSearchResult({ query, submitCount }: { query: string; submitCount?: number }) {
   return (
     <ReadingSettingsProvider>
@@ -99,6 +107,115 @@ function AiSearchResultInner({ query, submitCount }: { query: string; submitCoun
   const providerRef = useRef(provider);
   providerRef.current = provider;
 
+  // In-memory context cache (survives provider switches, not page navigations)
+  const contextCacheRef = useRef<ContextCache | null>(null);
+
+  const fetchContext = useCallback(async (q: string, signal: AbortSignal): Promise<ContextCache | null> => {
+    // Return cached context if query matches
+    if (contextCacheRef.current && contextCacheRef.current.query === q) {
+      return contextCacheRef.current;
+    }
+
+    const res = await fetch("/api/ai-context", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ query: q }),
+      signal,
+    });
+
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.error || `Context request failed (${res.status})`);
+    }
+
+    const data = await res.json();
+
+    if (data.error) {
+      // "No relevant sermon content found" case
+      throw new Error(data.error);
+    }
+
+    const result: ContextCache = {
+      query: q,
+      context: data.context,
+      sources: data.sources,
+      scope: data.scope,
+    };
+
+    contextCacheRef.current = result;
+    return result;
+  }, []);
+
+  const streamAnswer = useCallback(async (ctx: ContextCache, q: string, signal: AbortSignal) => {
+    setSources(ctx.sources);
+
+    const res = await fetch("/api/ai-stream", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        context: ctx.context,
+        sources: ctx.sources,
+        query: q,
+        provider: providerRef.current,
+      }),
+      signal,
+    });
+
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.error || `Stream request failed (${res.status})`);
+    }
+
+    const contentType = res.headers.get("content-type") || "";
+
+    // Handle non-streaming JSON response (error case)
+    if (contentType.includes("application/json")) {
+      const data = await res.json();
+      if (data.error) {
+        throw new Error(data.error);
+      }
+      return;
+    }
+
+    // Read sources from response header (authoritative, from ai-stream)
+    try {
+      const sourcesHeader = res.headers.get("X-Sources");
+      if (sourcesHeader) {
+        const parsed = JSON.parse(decodeURIComponent(sourcesHeader));
+        if (Array.isArray(parsed)) setSources(parsed);
+      }
+    } catch {}
+
+    // Handle plain text stream from toTextStreamResponse
+    const reader = res.body?.getReader();
+    if (!reader) throw new Error("No response stream");
+
+    const decoder = new TextDecoder();
+    let accumulated = "";
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      const chunk = decoder.decode(value, { stream: true });
+      accumulated += chunk;
+      // Strip any trailing ---SOURCES--- or --- the model might add
+      const display = accumulated.replace(/\n*---\s*SOURCES?\s*---[\s\S]*$/, "").replace(/\n*---\s*$/, "");
+      setResponse(display);
+    }
+
+    // Final cleanup of accumulated text
+    const finalResponse = accumulated
+      .replace(/\n*---\s*SOURCES?\s*---[\s\S]*$/, "")
+      .replace(/\n*---\s*$/, "")
+      .trim();
+    if (!finalResponse) {
+      throw new Error("No response received from the model. The request may have failed silently.");
+    }
+    setResponse(finalResponse);
+    writeAiCache(q, finalResponse, ctx.sources, providerRef.current);
+  }, []);
+
   const handleSubmit = useCallback(async (q: string) => {
     if (!q.trim()) return;
 
@@ -115,69 +232,9 @@ function AiSearchResultInner({ query, submitCount }: { query: string; submitCoun
     setSubmitted(true);
 
     try {
-      const res = await fetch("/api/ai-search", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query: q.trim(), provider: providerRef.current }),
-        signal: controller.signal,
-      });
-
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data.error || `Request failed (${res.status})`);
-      }
-
-      const contentType = res.headers.get("content-type") || "";
-
-      // Handle non-streaming JSON response (e.g. "no results" case)
-      if (contentType.includes("application/json")) {
-        const data = await res.json();
-        if (data.error) {
-          setResponse(data.error);
-        }
-        setLoading(false);
-        return;
-      }
-
-      // Read sources from response header
-      let finalSources: Source[] = [];
-      try {
-        const sourcesHeader = res.headers.get("X-Sources");
-        if (sourcesHeader) {
-          const parsed = JSON.parse(decodeURIComponent(sourcesHeader));
-          if (Array.isArray(parsed)) finalSources = parsed;
-        }
-      } catch {}
-      setSources(finalSources);
-
-      // Handle plain text stream from toTextStreamResponse
-      const reader = res.body?.getReader();
-      if (!reader) throw new Error("No response stream");
-
-      const decoder = new TextDecoder();
-      let accumulated = "";
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        const chunk = decoder.decode(value, { stream: true });
-        accumulated += chunk;
-        // Strip any trailing ---SOURCES--- or --- the model might add
-        const display = accumulated.replace(/\n*---\s*SOURCES?\s*---[\s\S]*$/, "").replace(/\n*---\s*$/, "");
-        setResponse(display);
-      }
-
-      // Final cleanup of accumulated text
-      const finalResponse = accumulated
-        .replace(/\n*---\s*SOURCES?\s*---[\s\S]*$/, "")
-        .replace(/\n*---\s*$/, "")
-        .trim();
-      if (!finalResponse) {
-        throw new Error("No response received from the model. The request may have failed silently.");
-      }
-      setResponse(finalResponse);
-      writeAiCache(q.trim(), finalResponse, finalSources, providerRef.current);
+      const ctx = await fetchContext(q.trim(), controller.signal);
+      if (!ctx) return;
+      await streamAnswer(ctx, q.trim(), controller.signal);
     } catch (err) {
       if (err instanceof DOMException && err.name === "AbortError") return;
       setError(err instanceof Error ? err.message : "Something went wrong");
@@ -186,7 +243,7 @@ function AiSearchResultInner({ query, submitCount }: { query: string; submitCoun
         setLoading(false);
       }
     }
-  }, []);
+  }, [fetchContext, streamAnswer]);
 
   // Submit when query changes (from the search bar), skip if restored from cache.
   // Also re-submit when submitCount bumps (user clicked send for same query).
@@ -219,13 +276,13 @@ function AiSearchResultInner({ query, submitCount }: { query: string; submitCoun
     };
   }, []);
 
-  const handleProviderChange = useCallback((p: AiProvider) => {
+  const handleProviderChange = useCallback(async (p: AiProvider) => {
     setProvider(p);
     providerRef.current = p;
     // Only re-submit if we've already shown a response for this query
     if (!query.trim() || !submitted) return;
 
-    // Check cache before re-submitting
+    // Check session cache before re-fetching
     const hit = readAiCache(query, p);
     if (hit) {
       setResponse(hit.response);
@@ -236,8 +293,34 @@ function AiSearchResultInner({ query, submitCount }: { query: string; submitCoun
       return;
     }
 
+    // If we have cached context for this query, skip the context fetch
+    if (contextCacheRef.current && contextCacheRef.current.query === query.trim()) {
+      // Cancel any in-flight request
+      if (abortRef.current) abortRef.current.abort();
+
+      const controller = new AbortController();
+      abortRef.current = controller;
+
+      setLoading(true);
+      setError(null);
+      setResponse("");
+
+      try {
+        await streamAnswer(contextCacheRef.current, query.trim(), controller.signal);
+      } catch (err) {
+        if (err instanceof DOMException && err.name === "AbortError") return;
+        setError(err instanceof Error ? err.message : "Something went wrong");
+      } finally {
+        if (abortRef.current === controller) {
+          setLoading(false);
+        }
+      }
+      return;
+    }
+
+    // No cached context — full submit
     handleSubmit(query);
-  }, [query, submitted, handleSubmit]);
+  }, [query, submitted, handleSubmit, streamAnswer]);
 
   const providerPills = (
     <div className="flex gap-1 items-center font-sans" style={{ fontFamily: "var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif" }}>
@@ -373,10 +456,12 @@ function AiSearchResultInner({ query, submitCount }: { query: string; submitCoun
  * converts [Sermon Title, Preacher] citations into links when a matching source exists.
  */
 function ResponseMarkdown({ text, sources }: { text: string; sources: Source[] }) {
-  // Build a lookup by title for citation linking
+  // Build lookups by title for citation linking
   const sourceByTitle = new Map<string, Source>();
+  const sourceByNormalized = new Map<string, Source>();
   for (const s of sources) {
     sourceByTitle.set(s.title.toLowerCase(), s);
+    sourceByNormalized.set(normalizeTitle(s.title), s);
   }
 
   const paragraphs = text.split(/\n\n+/);
@@ -397,7 +482,7 @@ function ResponseMarkdown({ text, sources }: { text: string; sources: Source[] }
         if (headingMatch && trimmed.startsWith("#")) {
           return (
             <p key={i} className="font-semibold text-gray-900 dark:text-gray-100 mt-4 mb-1">
-              {processInline(headingMatch[2], sourceByTitle)}
+              {processInline(headingMatch[2], sourceByTitle, sourceByNormalized)}
             </p>
           );
         }
@@ -408,21 +493,44 @@ function ResponseMarkdown({ text, sources }: { text: string; sources: Source[] }
           return (
             <ul key={i}>
               {items.map((item, j) => (
-                <li key={j}>{processInline(item.replace(/^[-*] /, ""), sourceByTitle)}</li>
+                <li key={j}>{processInline(item.replace(/^[-*] /, ""), sourceByTitle, sourceByNormalized)}</li>
               ))}
             </ul>
           );
         }
 
-        return <p key={i}>{processInline(trimmed.replace(/\n/g, " "), sourceByTitle)}</p>;
+        return <p key={i}>{processInline(trimmed.replace(/\n/g, " "), sourceByTitle, sourceByNormalized)}</p>;
       })}
     </>
   );
 }
 
+function normalizeTitle(t: string): string {
+  return t.toLowerCase().replace(/[^a-z0-9 ]/g, "").replace(/\s+/g, " ").trim();
+}
+
+function findSource(title: string, sourceByTitle: Map<string, Source>, sourceByNormalized: Map<string, Source>): Source | undefined {
+  // 1. Exact case-insensitive match
+  const exact = sourceByTitle.get(title.toLowerCase());
+  if (exact) return exact;
+
+  // 2. Normalized match (strip punctuation)
+  const normalized = normalizeTitle(title);
+  const norm = sourceByNormalized.get(normalized);
+  if (norm) return norm;
+
+  // 3. Substring match — citation title contains or is contained by a source title
+  for (const [key, source] of sourceByNormalized) {
+    if (key.includes(normalized) || normalized.includes(key)) return source;
+  }
+
+  return undefined;
+}
+
 function processInline(
   text: string,
-  sourceByTitle: Map<string, Source>
+  sourceByTitle: Map<string, Source>,
+  sourceByNormalized: Map<string, Source>
 ): React.ReactNode {
   // Match [Sermon Title, Preacher] citation patterns, **bold**, and *italic*
   const parts: React.ReactNode[] = [];
@@ -438,15 +546,15 @@ function processInline(
     }
 
     if (match[3] !== undefined) {
-      // Bold
-      parts.push(<strong key={key++}>{match[3]}</strong>);
+      // Bold — recurse so citations inside bold are still linked
+      parts.push(<strong key={key++}>{processInline(match[3], sourceByTitle, sourceByNormalized)}</strong>);
     } else if (match[4] !== undefined) {
-      // Italic
-      parts.push(<em key={key++}>{match[4]}</em>);
+      // Italic — recurse so citations inside italic are still linked
+      parts.push(<em key={key++}>{processInline(match[4], sourceByTitle, sourceByNormalized)}</em>);
     } else {
       // Citation
       const title = match[1].trim();
-      const source = sourceByTitle.get(title.toLowerCase());
+      const source = findSource(title, sourceByTitle, sourceByNormalized);
       if (source) {
         parts.push(
           <Link

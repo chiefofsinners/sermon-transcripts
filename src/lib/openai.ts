@@ -36,7 +36,7 @@ export async function transcribeWithWhisper(
   const file = await toFile(buffer, filename, { type: "audio/mpeg" });
 
   const response = await client.audio.transcriptions.create({
-    model: "whisper-1",
+    model: process.env.WHISPER_MODEL || "whisper-1",
     file,
     language: "en",
     response_format: "verbose_json",

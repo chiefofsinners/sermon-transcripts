@@ -281,6 +281,7 @@ function HomeContent() {
     // Non-phrase queries handle snippets separately (page-level fetch below)
     if (!hasPhrases) {
       if (abortRef.current) { abortRef.current.abort(); abortRef.current = null; }
+      setSnippetsLoading(false);
       return;
     }
 
@@ -366,8 +367,8 @@ function HomeContent() {
 
     // In AI mode, don't auto-search — wait for explicit submit
     if (searchModeRef.current === "ai") {
+      // Clear resets the AI query so AiSearchResult aborts and resets
       if (!q.trim()) {
-        // Clear resets the AI query so AiSearchResult aborts and resets
         setAiQuery("");
         setQuery("");
       }
