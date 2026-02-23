@@ -74,6 +74,39 @@ const BUDGET_PROFILES: Record<QueryScope, BudgetProfile> = {
   },
 };
 
+// --- Query expansion ---
+
+async function expandQuery(query: string): Promise<string> {
+  try {
+    const response = await openai.chat.completions.create({
+      model: "gpt-4.1-nano",
+      max_tokens: 120,
+      temperature: 0,
+      messages: [
+        {
+          role: "system",
+          content: `You are a search query expander for a Reformed Christian sermon library. Given a user's search query, rewrite it as a single dense paragraph that includes the original query plus synonyms, related theological terms, and subtopics that a preacher might address under this heading.
+
+For example, "sixth commandment" should also mention: thou shalt not kill, murder, killing, manslaughter, suicide, self-harm, abortion, euthanasia, capital punishment, sanctity of life, bloodshed, taking life, preservation of life.
+
+Keep the original query terms. Add related terms naturally. Do not explain — just output the expanded query.`,
+        },
+        { role: "user", content: query },
+      ],
+    });
+
+    const expanded = response.choices[0]?.message?.content?.trim();
+    if (expanded) {
+      console.log(`[ai-search] expanded query: "${expanded.slice(0, 120)}…"`);
+      return expanded;
+    }
+    return query;
+  } catch (err) {
+    console.error("[ai-search] expandQuery error, using original:", err);
+    return query;
+  }
+}
+
 // --- Query classification ---
 
 async function classifyQuery(query: string): Promise<QueryScope> {
@@ -145,16 +178,19 @@ export async function POST(request: Request) {
   const namespace = process.env.PINECONE_NAMESPACE || "";
   const index = pinecone.index(indexName);
 
-  // 1. Classify query and select budget (runs in parallel with embedding)
-  const [scope, embeddingRes] = await Promise.all([
+  // 1. Classify query and expand it (runs in parallel)
+  const [scope, expandedQuery] = await Promise.all([
     classifyQuery(query.trim()),
-    openai.embeddings.create({
-      model: EMBEDDING_MODEL,
-      input: query.trim(),
-    }),
+    expandQuery(query.trim()),
   ]);
 
   const budget = BUDGET_PROFILES[scope];
+
+  // 2. Embed the expanded query
+  const embeddingRes = await openai.embeddings.create({
+    model: EMBEDDING_MODEL,
+    input: expandedQuery,
+  });
   const queryEmbedding = embeddingRes.data[0].embedding;
 
   // 2. Query Pinecone with budget-driven topK
