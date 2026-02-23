@@ -85,6 +85,7 @@ export default function BackToSearch({ sermonId }: { sermonId: string }) {
             href={makeUrl(prevId)}
             aria-label="Previous sermon"
             className={`${btnBase} ${btnActive}`}
+            onClick={() => window.scrollTo({ top: 0 })}
           >
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <polyline points="15 18 9 12 15 6" />
@@ -121,6 +122,7 @@ export default function BackToSearch({ sermonId }: { sermonId: string }) {
             href={makeUrl(nextId)}
             aria-label="Next sermon"
             className={`${btnBase} ${btnActive}`}
+            onClick={() => window.scrollTo({ top: 0 })}
           >
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <polyline points="9 18 15 12 9 6" />
