@@ -367,7 +367,10 @@ function HomeContent() {
     // In AI mode, don't auto-search — wait for explicit submit
     if (searchModeRef.current === "ai") {
       // Clear resets the AI query so AiSearchResult aborts and resets
-      if (!q.trim()) setAiQuery("");
+      if (!q.trim()) {
+        setAiQuery("");
+        setQuery("");
+      }
       return;
     }
 
