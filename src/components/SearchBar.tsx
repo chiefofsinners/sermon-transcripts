@@ -63,6 +63,18 @@ export default function SearchBar({
           <div className="w-5 h-5 border-2 border-gray-500 border-t-transparent rounded-full animate-spin" />
         ) : (
           <>
+            {showSend && value && onSubmit && (
+              <button
+                type="button"
+                onClick={onSubmit}
+                className="flex items-center justify-center w-7 h-7 rounded-md bg-gray-700 dark:bg-gray-300 text-white dark:text-gray-900 hover:bg-gray-900 dark:hover:bg-white cursor-pointer transition-colors"
+                aria-label="Send"
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 10.5 12 3m0 0 7.5 7.5M12 3v18" />
+                </svg>
+              </button>
+            )}
             {value && (
               <button
                 type="button"
@@ -70,23 +82,11 @@ export default function SearchBar({
                   onChange("");
                   inputRef.current?.focus();
                 }}
-                className="flex items-center justify-center w-5 h-5 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300 cursor-pointer"
+                className="flex items-center justify-center w-5 h-5 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300 cursor-pointer ml-1"
                 aria-label="Clear search"
               >
                 <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            )}
-            {showSend && value && onSubmit && (
-              <button
-                type="button"
-                onClick={onSubmit}
-                className="flex items-center justify-center w-7 h-7 rounded-md bg-gray-700 dark:bg-gray-300 text-white dark:text-gray-900 hover:bg-gray-900 dark:hover:bg-white cursor-pointer transition-colors ml-1"
-                aria-label="Send"
-              >
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 10.5 12 3m0 0 7.5 7.5M12 3v18" />
                 </svg>
               </button>
             )}

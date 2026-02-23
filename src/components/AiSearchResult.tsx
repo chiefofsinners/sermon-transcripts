@@ -373,10 +373,12 @@ function AiSearchResultInner({ query, submitCount }: { query: string; submitCoun
  * converts [Sermon Title, Preacher] citations into links when a matching source exists.
  */
 function ResponseMarkdown({ text, sources }: { text: string; sources: Source[] }) {
-  // Build a lookup by title for citation linking
+  // Build lookups by title for citation linking
   const sourceByTitle = new Map<string, Source>();
+  const sourceByNormalized = new Map<string, Source>();
   for (const s of sources) {
     sourceByTitle.set(s.title.toLowerCase(), s);
+    sourceByNormalized.set(normalizeTitle(s.title), s);
   }
 
   const paragraphs = text.split(/\n\n+/);
@@ -397,7 +399,7 @@ function ResponseMarkdown({ text, sources }: { text: string; sources: Source[] }
         if (headingMatch && trimmed.startsWith("#")) {
           return (
             <p key={i} className="font-semibold text-gray-900 dark:text-gray-100 mt-4 mb-1">
-              {processInline(headingMatch[2], sourceByTitle)}
+              {processInline(headingMatch[2], sourceByTitle, sourceByNormalized)}
             </p>
           );
         }
@@ -408,21 +410,44 @@ function ResponseMarkdown({ text, sources }: { text: string; sources: Source[] }
           return (
             <ul key={i}>
               {items.map((item, j) => (
-                <li key={j}>{processInline(item.replace(/^[-*] /, ""), sourceByTitle)}</li>
+                <li key={j}>{processInline(item.replace(/^[-*] /, ""), sourceByTitle, sourceByNormalized)}</li>
               ))}
             </ul>
           );
         }
 
-        return <p key={i}>{processInline(trimmed.replace(/\n/g, " "), sourceByTitle)}</p>;
+        return <p key={i}>{processInline(trimmed.replace(/\n/g, " "), sourceByTitle, sourceByNormalized)}</p>;
       })}
     </>
   );
 }
 
+function normalizeTitle(t: string): string {
+  return t.toLowerCase().replace(/[^a-z0-9 ]/g, "").replace(/\s+/g, " ").trim();
+}
+
+function findSource(title: string, sourceByTitle: Map<string, Source>, sourceByNormalized: Map<string, Source>): Source | undefined {
+  // 1. Exact case-insensitive match
+  const exact = sourceByTitle.get(title.toLowerCase());
+  if (exact) return exact;
+
+  // 2. Normalized match (strip punctuation)
+  const normalized = normalizeTitle(title);
+  const norm = sourceByNormalized.get(normalized);
+  if (norm) return norm;
+
+  // 3. Substring match — citation title contains or is contained by a source title
+  for (const [key, source] of sourceByNormalized) {
+    if (key.includes(normalized) || normalized.includes(key)) return source;
+  }
+
+  return undefined;
+}
+
 function processInline(
   text: string,
-  sourceByTitle: Map<string, Source>
+  sourceByTitle: Map<string, Source>,
+  sourceByNormalized: Map<string, Source>
 ): React.ReactNode {
   // Match [Sermon Title, Preacher] citation patterns, **bold**, and *italic*
   const parts: React.ReactNode[] = [];
@@ -446,7 +471,7 @@ function processInline(
     } else {
       // Citation
       const title = match[1].trim();
-      const source = sourceByTitle.get(title.toLowerCase());
+      const source = findSource(title, sourceByTitle, sourceByNormalized);
       if (source) {
         parts.push(
           <Link
