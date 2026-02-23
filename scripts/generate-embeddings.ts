@@ -8,7 +8,7 @@ import type { SermonData } from "../src/lib/types";
 const DATA_DIR = join(process.cwd(), "data", "sermons");
 const CHUNK_SIZE = 500; // words
 const CHUNK_OVERLAP = 50; // words
-const EMBEDDING_BATCH_SIZE = 100;
+const EMBEDDING_BATCH_SIZE = process.env.EMBEDDING_PROVIDER === "pinecone" ? 96 : 100;
 const UPSERT_BATCH_SIZE = 100;
 
 const pinecone = new Pinecone({ apiKey: process.env.PINECONE_API_KEY! });
