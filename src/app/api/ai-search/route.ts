@@ -75,7 +75,7 @@ const BUDGET_PROFILES: Record<QueryScope, BudgetProfile> = {
 async function expandQuery(query: string): Promise<string> {
   try {
     const response = await openai.chat.completions.create({
-      model: "gpt-4.1-nano",
+      model: "gpt-5-nano",
       max_tokens: 120,
       temperature: 0,
       messages: [
