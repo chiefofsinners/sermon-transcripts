@@ -1,10 +1,10 @@
 import { Pinecone } from "@pinecone-database/pinecone";
 import OpenAI from "openai";
+import { embed } from "@/lib/embeddings";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const pinecone = new Pinecone({ apiKey: process.env.PINECONE_API_KEY! });
 
-const EMBEDDING_MODEL = process.env.EMBEDDING_MODEL || "text-embedding-3-small";
 const AI_UTILITY_MODEL = process.env.AI_UTILITY_MODEL || "gpt-5-nano";
 
 interface ChunkMetadata {
@@ -176,11 +176,7 @@ export async function POST(request: Request) {
   const budget = BUDGET_PROFILES[scope];
 
   // 2. Embed the expanded query
-  const embeddingRes = await openai.embeddings.create({
-    model: EMBEDDING_MODEL,
-    input: expandedQuery,
-  });
-  const queryEmbedding = embeddingRes.data[0].embedding;
+  const [queryEmbedding] = await embed([expandedQuery], "query");
 
   // 3. Query Pinecone with budget-driven topK
   const ns = namespace ? index.namespace(namespace) : index;

@@ -2,17 +2,15 @@ import "dotenv/config";
 import { readdirSync, readFileSync } from "fs";
 import { join } from "path";
 import { Pinecone } from "@pinecone-database/pinecone";
-import OpenAI from "openai";
+import { embed } from "../src/lib/embeddings";
 import type { SermonData } from "../src/lib/types";
 
 const DATA_DIR = join(process.cwd(), "data", "sermons");
 const CHUNK_SIZE = 500; // words
 const CHUNK_OVERLAP = 50; // words
-const EMBEDDING_MODEL = process.env.EMBEDDING_MODEL || "text-embedding-3-small";
 const EMBEDDING_BATCH_SIZE = 100;
 const UPSERT_BATCH_SIZE = 100;
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const pinecone = new Pinecone({ apiKey: process.env.PINECONE_API_KEY! });
 
 interface ChunkRecord {
@@ -186,12 +184,8 @@ async function generateEmbeddings(texts: string[]): Promise<number[][]> {
   const embeddings: number[][] = [];
   for (let i = 0; i < texts.length; i += EMBEDDING_BATCH_SIZE) {
     const batch = texts.slice(i, i + EMBEDDING_BATCH_SIZE);
-    const res = await withRetry(() =>
-      openai.embeddings.create({ model: EMBEDDING_MODEL, input: batch })
-    );
-    for (const item of res.data) {
-      embeddings.push(item.embedding);
-    }
+    const batchEmbeddings = await withRetry(() => embed(batch, "passage"));
+    embeddings.push(...batchEmbeddings);
     if (i + EMBEDDING_BATCH_SIZE < texts.length) {
       process.stdout.write(`  Embedded ${Math.min(i + EMBEDDING_BATCH_SIZE, texts.length)}/${texts.length} chunks\r`);
     }
