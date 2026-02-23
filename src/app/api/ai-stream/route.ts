@@ -44,8 +44,22 @@ export async function POST(request: Request) {
   try {
     const result = streamText({
       model: PROVIDER_MODELS[provider](),
-      system: AI_SYSTEM_PROMPT,
-      prompt: `Here are relevant excerpts from sermons:\n\n${context}\n\nUser's question: ${query}`,
+      messages: [
+        {
+          role: "system",
+          content: AI_SYSTEM_PROMPT,
+          providerOptions: {
+            anthropic: { cacheControl: { type: "ephemeral" } },
+          },
+        },
+        {
+          role: "user",
+          content: `Here are relevant excerpts from sermons:\n\n${context}\n\nUser's question: ${query}`,
+        },
+      ],
+      providerOptions: {
+        openai: { promptCacheRetention: "24h" },
+      },
     });
 
     return result.toTextStreamResponse({
