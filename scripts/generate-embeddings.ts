@@ -163,15 +163,24 @@ async function getExistingIds(index: ReturnType<Pinecone["index"]>, namespace: s
   return existing;
 }
 
-async function withRetry<T>(fn: () => Promise<T>, maxRetries = 5): Promise<T> {
+function isRateLimited(err: unknown): boolean {
+  const status = (err as { status?: number }).status;
+  if (status === 429) return true;
+  // Pinecone SDK wraps 429s in its own error types with the status in the message
+  const msg = String((err as Error).message || "");
+  if (msg.includes("429") || msg.includes("RESOURCE_EXHAUSTED")) return true;
+  return false;
+}
+
+async function withRetry<T>(fn: () => Promise<T>, maxRetries = 8): Promise<T> {
   for (let attempt = 0; ; attempt++) {
     try {
       return await fn();
     } catch (err: unknown) {
-      const status = (err as { status?: number }).status;
-      if (status === 429 && attempt < maxRetries) {
-        const delay = Math.min(2 ** attempt * 1000, 60000);
-        console.log(`\n  Rate limited, waiting ${delay / 1000}s before retry...`);
+      if (isRateLimited(err) && attempt < maxRetries) {
+        // Pinecone's token-per-minute limit needs longer waits
+        const delay = Math.min(2 ** attempt * 2000, 120000);
+        console.log(`\n  Rate limited, waiting ${delay / 1000}s before retry (attempt ${attempt + 1}/${maxRetries})...`);
         await new Promise((r) => setTimeout(r, delay));
         continue;
       }
