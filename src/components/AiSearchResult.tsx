@@ -373,6 +373,9 @@ function AiSearchResultInner({ query, submitCount }: { query: string; submitCoun
           <p style={{ fontSize: "0.85em" }}>
             e.g. &ldquo;What does the Bible say about prayer?&rdquo; or &ldquo;What has been preached about justification by faith?&rdquo;
           </p>
+          <p className="mt-4 text-gray-400 dark:text-gray-600" style={{ fontSize: "0.75em" }}>
+            Please note that queries are logged to improve the quality of results.
+          </p>
         </div>
         {showSettings && <ReadingSettingsOverlay onClose={() => setShowSettings(false)} />}
       </div>
