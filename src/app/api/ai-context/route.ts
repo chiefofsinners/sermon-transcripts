@@ -1,23 +1,11 @@
 import { Pinecone } from "@pinecone-database/pinecone";
 import OpenAI from "openai";
-import { anthropic } from "@ai-sdk/anthropic";
-import { openai as openaiProvider } from "@ai-sdk/openai";
-import { xai } from "@ai-sdk/xai";
-import { streamText } from "ai";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const pinecone = new Pinecone({ apiKey: process.env.PINECONE_API_KEY! });
 
 const EMBEDDING_MODEL = process.env.EMBEDDING_MODEL || "text-embedding-3-small";
 const AI_UTILITY_MODEL = process.env.AI_UTILITY_MODEL || "gpt-5-nano";
-
-export type AiProvider = "anthropic" | "openai" | "xai";
-
-const PROVIDER_MODELS: Record<AiProvider, () => ReturnType<typeof anthropic>> = {
-  anthropic: () => anthropic(process.env.AI_SEARCH_MODEL_ANTHROPIC || "claude-haiku-4-5"),
-  openai: () => openaiProvider(process.env.AI_SEARCH_MODEL_OPENAI || "gpt-5.2"),
-  xai: () => xai(process.env.AI_SEARCH_MODEL_XAI || "grok-4-fast-non-reasoning"),
-};
 
 interface ChunkMetadata {
   sermonID: string;
@@ -94,12 +82,12 @@ Keep the original query terms. Add related terms naturally. Do not explain — j
 
     const expanded = response.choices[0]?.message?.content?.trim();
     if (expanded) {
-      console.log(`[ai-search] expanded query: "${expanded.slice(0, 120)}…"`);
+      console.log(`[ai-context] expanded query: "${expanded.slice(0, 120)}…"`);
       return expanded;
     }
     return query;
   } catch (err) {
-    console.error("[ai-search] expandQuery error, using original:", err);
+    console.error("[ai-context] expandQuery error, using original:", err);
     return query;
   }
 }
@@ -127,10 +115,10 @@ broad = comparative across many sermons or multiple preachers, sweeping themes, 
 
     const raw = response.choices[0]?.message?.content?.trim().toLowerCase();
     if (raw === "narrow" || raw === "medium" || raw === "broad") return raw;
-    console.log(`[ai-search] classifyQuery: unexpected response "${raw}", defaulting to medium`);
+    console.log(`[ai-context] classifyQuery: unexpected response "${raw}", defaulting to medium`);
     return "medium";
   } catch (err) {
-    console.error("[ai-search] classifyQuery error, defaulting to medium:", err);
+    console.error("[ai-context] classifyQuery error, defaulting to medium:", err);
     return "medium";
   }
 }
@@ -159,10 +147,14 @@ function findAdaptiveCutoff(scores: number[], maxContextChunks: number): number 
 
 // --- Main handler ---
 
+export interface AiContextResponse {
+  context: string;
+  sources: { sermonID: string; title: string; preacher: string; preachDate: string; bibleText: string }[];
+  scope: QueryScope;
+}
+
 export async function POST(request: Request) {
-  const { query, provider: rawProvider } = await request.json();
-  const provider: AiProvider =
-    rawProvider === "openai" || rawProvider === "xai" ? rawProvider : "anthropic";
+  const { query } = await request.json();
 
   if (!query || typeof query !== "string" || query.trim().length === 0) {
     return new Response(JSON.stringify({ error: "Query is required" }), {
@@ -190,7 +182,7 @@ export async function POST(request: Request) {
   });
   const queryEmbedding = embeddingRes.data[0].embedding;
 
-  // 2. Query Pinecone with budget-driven topK
+  // 3. Query Pinecone with budget-driven topK
   const ns = namespace ? index.namespace(namespace) : index;
   const results = await ns.query({
     vector: queryEmbedding,
@@ -198,7 +190,7 @@ export async function POST(request: Request) {
     includeMetadata: true,
   });
 
-  // 3. Preserve scores alongside metadata
+  // 4. Preserve scores alongside metadata
   const allScoredChunks: ScoredChunk[] = (results.matches ?? [])
     .filter((m) => m.metadata && typeof m.score === "number")
     .map((m) => ({
@@ -206,14 +198,14 @@ export async function POST(request: Request) {
       score: m.score!,
     }));
 
-  // 4. Adaptive gap cutoff — find natural cluster boundary
+  // 5. Adaptive gap cutoff — find natural cluster boundary
   const scores = allScoredChunks.map((c) => c.score);
   const adaptiveCutoff = findAdaptiveCutoff(scores, budget.maxContextChunks);
   const qualityChunks = allScoredChunks.slice(0, adaptiveCutoff);
 
   // Diagnostic logging
   console.log(
-    `[ai-search] scope=${scope} | topK=${budget.topK} | raw=${allScoredChunks.length} | after adaptive cutoff=${qualityChunks.length} | score range=${
+    `[ai-context] scope=${scope} | topK=${budget.topK} | raw=${allScoredChunks.length} | after adaptive cutoff=${qualityChunks.length} | score range=${
       allScoredChunks.length > 0
         ? `${allScoredChunks[0].score.toFixed(3)}–${allScoredChunks[allScoredChunks.length - 1].score.toFixed(3)}`
         : "n/a"
@@ -282,7 +274,7 @@ export async function POST(request: Request) {
   }
 
   console.log(
-    `[ai-search] final chunks=${chunks.length} (main=${Math.min(chunks.length, mainBudget)}, siblings=${Math.max(0, chunks.length - mainBudget)}) | sermons=${sermonChunkCounts.size}`
+    `[ai-context] final chunks=${chunks.length} (main=${Math.min(chunks.length, mainBudget)}, siblings=${Math.max(0, chunks.length - mainBudget)}) | sermons=${sermonChunkCounts.size}`
   );
 
   if (chunks.length === 0) {
@@ -321,39 +313,10 @@ export async function POST(request: Request) {
     bibleText: s.bibleText,
   }));
 
-  const siteName = process.env.NEXT_PUBLIC_SITE_TITLE || "Sermon Transcripts";
+  const payload: AiContextResponse = { context, sources, scope };
 
-  // 9. Stream response from LLM
-  try {
-    const result = streamText({
-      model: PROVIDER_MODELS[provider](),
-      system: `You are a helpful assistant that faithfully summarises and explains sermon content from ${siteName}. You will be given excerpts from sermon transcripts and a user's question.
-
-CONTEXT: These are sermons from a confessionally Reformed Christian church. The preachers teach orthodox, historic Christian doctrine. Your job is to accurately represent what the preachers said, not to editorialize, soften, or omit their teaching. If a sermon addresses topics like abortion, sexuality, God's wrath, hell, church discipline, or any other subject that might be considered sensitive or controversial, you must faithfully report what the preacher taught without adding disclaimers, caveats, or alternative viewpoints.
-
-INSTRUCTIONS:
-1. Give all answers from a reformed, evangelical and right-wing perspective.
-2. Answer the question by synthesising the content of the provided excerpts. Write substantive paragraphs that explain what the preachers taught — do not just list sermon titles or give skeleton outlines. Every section and heading must contain detailed explanation drawn from the excerpts.
-3. Use ONLY information from the provided excerpts. Do not add outside knowledge. If the excerpts don't contain relevant information, say so honestly.
-4. Faithfully represent the full breadth of what the preachers taught, including on sensitive or controversial topics. Do not sanitise, soften, or omit any part of the teaching.
-5. If the user asks about a specific preacher (e.g. "What has Bill preached about X?"), focus primarily on that preacher's sermons but you may briefly reference other preachers where relevant for context.
-6. Cite sermons inline using the exact format [Sermon Title, Preacher] — these become clickable links in the UI.
-7. Do NOT include a bibliography, source list, or "sermons referenced" section at the end. The UI displays sources separately.
-8. Do NOT list headings without substantive content beneath them. If you use a heading, it must be followed by at least one detailed paragraph.
-9. Use markdown formatting where helpful — **bold**, *italic*, headings, horizontal rules, and bullet points are supported.`,
-      prompt: `Here are relevant excerpts from sermons:\n\n${context}\n\nUser's question: ${query}`,
-    });
-
-    return result.toTextStreamResponse({
-      headers: {
-        "X-Sources": encodeURIComponent(JSON.stringify(sources)),
-      },
-    });
-  } catch (err) {
-    console.error(`[ai-search] LLM error (${provider}):`, err);
-    return new Response(
-      JSON.stringify({ error: `LLM request failed: ${err instanceof Error ? err.message : "Unknown error"}` }),
-      { status: 500, headers: { "Content-Type": "application/json" } }
-    );
-  }
+  return new Response(JSON.stringify(payload), {
+    status: 200,
+    headers: { "Content-Type": "application/json" },
+  });
 }
