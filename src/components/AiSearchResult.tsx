@@ -552,26 +552,37 @@ function processInline(
       // Italic — recurse so citations inside italic are still linked
       parts.push(<em key={key++}>{processInline(match[4], sourceByTitle, sourceByNormalized)}</em>);
     } else {
-      // Citation
-      const title = match[1].trim();
-      const source = findSource(title, sourceByTitle, sourceByNormalized);
-      if (source) {
-        parts.push(
-          <Link
-            key={key++}
-            href={`/sermon/${source.sermonID}`}
-            className="text-gray-700 dark:text-gray-300 underline decoration-gray-400 dark:decoration-gray-500 hover:text-gray-900 dark:hover:text-gray-100"
-          >
-            {title}, {match[2].trim()}
-          </Link>
-        );
-      } else {
-        parts.push(
-          <span key={key++} className="text-gray-700 dark:text-gray-300 underline decoration-gray-400 dark:decoration-gray-500">
-            [{title}, {match[2].trim()}]
-          </span>
-        );
-      }
+      // Citation — may contain multiple semicolon-separated citations
+      const fullText = match[1] + ", " + match[2];
+      const citations = fullText.split(/;\s*/);
+      citations.forEach((cite, ci) => {
+        if (ci > 0) parts.push("; ");
+        const commaIdx = cite.lastIndexOf(",");
+        if (commaIdx === -1) {
+          parts.push(cite.trim());
+          return;
+        }
+        const title = cite.slice(0, commaIdx).trim();
+        const preacher = cite.slice(commaIdx + 1).trim();
+        const source = findSource(title, sourceByTitle, sourceByNormalized);
+        if (source) {
+          parts.push(
+            <Link
+              key={key++}
+              href={`/sermon/${source.sermonID}`}
+              className="text-gray-700 dark:text-gray-300 underline decoration-gray-400 dark:decoration-gray-500 hover:text-gray-900 dark:hover:text-gray-100"
+            >
+              {title}, {preacher}
+            </Link>
+          );
+        } else {
+          parts.push(
+            <span key={key++} className="text-gray-700 dark:text-gray-300 underline decoration-gray-400 dark:decoration-gray-500">
+              [{title}, {preacher}]
+            </span>
+          );
+        }
+      });
     }
     last = match.index + match[0].length;
   }
