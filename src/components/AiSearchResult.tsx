@@ -546,11 +546,11 @@ function processInline(
     }
 
     if (match[3] !== undefined) {
-      // Bold
-      parts.push(<strong key={key++}>{match[3]}</strong>);
+      // Bold — recurse so citations inside bold are still linked
+      parts.push(<strong key={key++}>{processInline(match[3], sourceByTitle, sourceByNormalized)}</strong>);
     } else if (match[4] !== undefined) {
-      // Italic
-      parts.push(<em key={key++}>{match[4]}</em>);
+      // Italic — recurse so citations inside italic are still linked
+      parts.push(<em key={key++}>{processInline(match[4], sourceByTitle, sourceByNormalized)}</em>);
     } else {
       // Citation
       const title = match[1].trim();
