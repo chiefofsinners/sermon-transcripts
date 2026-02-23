@@ -803,6 +803,9 @@ function HomeContent() {
             loading={loading}
             showSend={searchMode === "ai"}
           />
+          <p className="text-center text-xs text-gray-400 dark:text-gray-600 mt-2">
+            Please note that {searchMode === "ai" ? "queries" : "searches"} are logged to improve the quality of results.
+          </p>
         </div>
 
         {loading ? null : searchMode === "ai" ? (
