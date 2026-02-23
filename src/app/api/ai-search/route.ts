@@ -78,7 +78,6 @@ async function expandQuery(query: string): Promise<string> {
     const response = await openai.chat.completions.create({
       model: AI_UTILITY_MODEL,
       max_completion_tokens: 120,
-      temperature: 0,
       messages: [
         {
           role: "system",
@@ -111,7 +110,6 @@ async function classifyQuery(query: string): Promise<QueryScope> {
     const response = await openai.chat.completions.create({
       model: AI_UTILITY_MODEL,
       max_completion_tokens: 5,
-      temperature: 0,
       messages: [
         {
           role: "system",
