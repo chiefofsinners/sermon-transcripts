@@ -67,7 +67,7 @@ export default function SearchBar({
               <button
                 type="button"
                 onClick={onSubmit}
-                className="flex items-center justify-center w-7 h-7 rounded-md bg-gray-700 dark:bg-gray-300 text-white dark:text-gray-900 hover:bg-gray-900 dark:hover:bg-white cursor-pointer transition-colors"
+                className="flex items-center justify-center w-7 h-7 rounded-md bg-gray-400 dark:bg-gray-300 text-white dark:text-gray-900 hover:bg-gray-500 dark:hover:bg-white cursor-pointer transition-colors"
                 aria-label="Send"
               >
                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor">
