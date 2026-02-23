@@ -893,7 +893,7 @@ function HomeContent() {
           <Pagination
             page={page}
             totalPages={totalPages}
-            onPageChange={setPage}
+            onPageChange={handlePageChange}
           />
         )}
       </div>
