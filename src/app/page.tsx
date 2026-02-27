@@ -951,7 +951,7 @@ function HomeContent() {
               {/* AI panel — left on desktop, top on mobile */}
               <div className="w-full lg:w-1/2 lg:min-w-0 flex flex-col">
                 <h2 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-2 text-center">AI Answer</h2>
-                <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 flex-1">
+                <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 flex-1 bg-gray-100 dark:bg-gray-800">
                   <AiSearchResult query={aiQuery} submitCount={aiSubmitCount} />
                 </div>
               </div>
@@ -959,7 +959,7 @@ function HomeContent() {
               {/* Sermon list — right on desktop, below on mobile */}
               <div className="w-full lg:w-1/2 lg:min-w-0">
                 <h2 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-2 text-center">Search Results</h2>
-                <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-4">
+                <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 bg-gray-100 dark:bg-gray-800">
                 {dynamicFilterOptions && (
                   <SermonFilters
                     options={dynamicFilterOptions}
