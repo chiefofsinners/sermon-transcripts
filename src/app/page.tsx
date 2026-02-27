@@ -101,6 +101,8 @@ function HomeContent() {
   const [query, setQuery] = useState(cached.current?.query ?? initialQuery);
   const [inputValue, setInputValue] = useState(query);
   const [aiQuery, setAiQuery] = useState(cached.current?.aiQuery ?? (initialMode === "ai" || initialMode === "combined" ? initialQuery : ""));
+  const aiQueryRef = useRef(cached.current?.aiQuery ?? "");
+  aiQueryRef.current = aiQuery;
   const [aiSubmitCount, setAiSubmitCount] = useState(cached.current?.aiQuery ? 1 : 0);
   const [, startTransition] = useTransition();
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -424,9 +426,12 @@ function HomeContent() {
   // AI-only submit — stay on combo, only trigger AI
   const handleAiOnlySubmit = useCallback(() => {
     if (inputValue.trim()) {
-      setAiQuery(inputValue.trim());
-      setAiSubmitCount((c) => c + 1);
-      logSearch(inputValue.trim(), "ai");
+      const q = inputValue.trim();
+      if (q !== aiQueryRef.current) {
+        setAiQuery(q);
+        setAiSubmitCount((c) => c + 1);
+        logSearch(q, "ai");
+      }
     }
   }, [inputValue, logSearch]);
 
@@ -443,16 +448,20 @@ function HomeContent() {
   // Both AI and word search (combined submit / Enter key)
   const handleAiSubmit = useCallback(() => {
     if (inputValue.trim()) {
-      setAiQuery(inputValue.trim());
-      setAiSubmitCount((c) => c + 1);
-      logSearch(inputValue.trim(), "ai");
+      const q = inputValue.trim();
+      // Only re-trigger AI if the query actually changed
+      if (q !== aiQueryRef.current) {
+        setAiQuery(q);
+        setAiSubmitCount((c) => c + 1);
+        logSearch(q, "ai");
+      }
       // In combined mode, also trigger FlexSearch
       if (searchModeRef.current === "combined") {
         startTransition(() => {
-          runSearch(inputValue.trim(), "combined");
+          runSearch(q, "combined");
         });
       } else {
-        setQuery(inputValue.trim());
+        setQuery(q);
       }
     }
   }, [inputValue, logSearch, runSearch]);
