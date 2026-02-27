@@ -957,11 +957,37 @@ function HomeContent() {
           <AiSearchResult query={aiQuery} submitCount={aiSubmitCount} />
         ) : searchMode === "combined" ? (
           <>
+            {/* Mobile panel toggle bar — visible only below lg */}
+            <div className="flex items-center justify-between lg:hidden mb-2">
+              {/* AI expand button — show when AI is hidden, or when both visible (to expand AI) */}
+              {(aiPanelHidden || !searchPanelHidden) && (
+              <button
+                onClick={() => aiPanelHidden ? setAiPanelHidden(false) : setSearchPanelHidden(true)}
+                className="flex items-center gap-1 text-sm font-medium text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 cursor-pointer transition-colors"
+                title={aiPanelHidden ? "Show AI panel" : "Expand AI panel"}
+              >
+                <span>AI</span>
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="7 13 12 18 17 13"/><polyline points="7 6 12 11 17 6"/></svg>
+              </button>
+              )}
+              {/* Search expand button — show when search is hidden, or when both visible (to expand search) */}
+              {(searchPanelHidden || !aiPanelHidden) && (
+              <button
+                onClick={() => searchPanelHidden ? setSearchPanelHidden(false) : setAiPanelHidden(true)}
+                className="flex items-center gap-1 text-sm font-medium text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 cursor-pointer transition-colors ml-auto"
+                title={searchPanelHidden ? "Show search panel" : "Expand search panel"}
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="17 11 12 6 7 11"/><polyline points="17 18 12 13 7 18"/></svg>
+                <span>Search</span>
+              </button>
+              )}
+            </div>
+
             {/* Side-by-side on desktop, stacked on mobile */}
             <div className={`flex flex-col lg:flex-row lg:items-stretch gap-6 ${(aiPanelHidden || searchPanelHidden) ? "flex-1" : ""}`}>
               {/* AI panel — left on desktop, top on mobile */}
               <div className={`w-full flex flex-col ${searchPanelHidden ? "" : "lg:w-1/2"} lg:min-w-0`} style={aiPanelHidden ? { display: 'none' } : undefined}>
-                <div className="relative flex items-center justify-center mb-2">
+                <div className="relative hidden lg:flex items-center justify-center mb-2">
                   {!searchPanelHidden && (
                   <button
                     onClick={() => setSearchPanelHidden(true)}
@@ -991,7 +1017,7 @@ function HomeContent() {
 
               {/* Sermon list — right on desktop, below on mobile */}
               <div className={`w-full ${aiPanelHidden ? "flex flex-col" : "lg:w-1/2"} lg:min-w-0`} style={searchPanelHidden ? { display: 'none' } : undefined}>
-                <div className="relative flex items-center justify-center mb-2">
+                <div className="relative hidden lg:flex items-center justify-center mb-2">
                   {aiPanelHidden && (
                   <button
                     onClick={() => setAiPanelHidden(false)}
