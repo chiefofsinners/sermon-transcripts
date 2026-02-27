@@ -5,6 +5,7 @@ import { embed } from "@/lib/embeddings";
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const pinecone = new Pinecone({ apiKey: process.env.PINECONE_API_KEY! });
 
+const EMBEDDING_MODEL = process.env.EMBEDDING_MODEL || "text-embedding-3-small";
 const AI_UTILITY_MODEL = process.env.AI_UTILITY_MODEL || "gpt-5-nano";
 
 interface ChunkMetadata {
@@ -66,7 +67,7 @@ async function expandQuery(query: string): Promise<string> {
     const response = await openai.chat.completions.create({
       model: AI_UTILITY_MODEL,
       max_completion_tokens: 1024,
-      reasoning_effort: "low",
+      reasoning_effort: "minimal",
       messages: [
         {
           role: "system",
@@ -99,7 +100,7 @@ async function classifyQuery(query: string): Promise<QueryScope> {
     const response = await openai.chat.completions.create({
       model: AI_UTILITY_MODEL,
       max_completion_tokens: 256,
-      reasoning_effort: "low",
+      reasoning_effort: "minimal",
       messages: [
         {
           role: "system",
@@ -176,7 +177,12 @@ export async function POST(request: Request) {
   const budget = BUDGET_PROFILES[scope];
 
   // 2. Embed the expanded query
-  const [queryEmbedding] = await embed([expandedQuery], "query");
+  const embeddingRes = await pinecone.inference.embed(
+    EMBEDDING_MODEL,
+    [expandedQuery],
+    { inputType: "query" },
+  );
+  const queryEmbedding = embeddingRes.data[0].values!;
 
   // 3. Query Pinecone with budget-driven topK
   const ns = namespace ? index.namespace(namespace) : index;

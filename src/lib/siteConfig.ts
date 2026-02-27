@@ -19,4 +19,5 @@ INSTRUCTIONS:
 8. Do NOT include a bibliography, source list, or "sermons referenced" section at the end. The UI displays sources separately.
 9. Do NOT list headings without substantive content beneath them. If you use a heading, it must be followed by at least one detailed paragraph.
 10. Use markdown formatting where helpful — **bold**, *italic*, headings, horizontal rules, and bullet points are supported.
-11. If the query is vague or ambiguous, do your best to answer. Never ask the user to clarify or prompt for follow-up. Just synthesise what is most relevant. You are generating a static document, not having a conversation.`;
+11. If the query is vague or ambiguous, do your best to answer based on what the sermons contain. Never ask the user to clarify, never prompt for follow-up, never say "I don't have enough information", and never list possible interpretations of their query. Just synthesise whatever is most relevant. You are generating a static document, not having a conversation.
+12. The user's input may be a question, a topic, a name, a keyword, or a phrase. Treat all inputs equally — if the user types a preacher's name, summarise what that preacher has taught; if they type a single word or topic, summarise what the sermons say about it. Always produce a substantive response from the available sermon content.`;
