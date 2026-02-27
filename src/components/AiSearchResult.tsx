@@ -407,7 +407,7 @@ function AiSearchResultInner({ query, submitCount }: { query: string; submitCoun
     return (
       <div>
         <div className="mb-4">{providerPills}</div>
-        <div className="text-center pt-10 lg:pt-24 pb-4 text-gray-500 dark:text-gray-400">
+        <div className="text-center pt-10 pb-10 lg:pt-24 lg:pb-24 text-gray-500 dark:text-gray-400">
           <p style={{ fontSize: fontSizeMap[fontSize], fontFamily: fontFamilyMap[fontFamily], lineHeight: 1.6 }}>
             AI will attempt to provide an answer or summary here when you submit a query.
           </p>

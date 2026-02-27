@@ -914,12 +914,17 @@ function HomeContent() {
             {/* Side-by-side on desktop, stacked on mobile */}
             <div className="flex flex-col lg:flex-row gap-6">
               {/* AI panel — left on desktop, top on mobile */}
-              <div className="w-full lg:w-1/2 lg:min-w-0 border border-gray-200 dark:border-gray-700 rounded-lg p-4">
-                <AiSearchResult query={aiQuery} submitCount={aiSubmitCount} />
+              <div className="w-full lg:w-1/2 lg:min-w-0">
+                <h2 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-2 text-center">AI Answer</h2>
+                <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 lg:min-h-[calc(100vh-2rem)]">
+                  <AiSearchResult query={aiQuery} submitCount={aiSubmitCount} />
+                </div>
               </div>
 
               {/* Sermon list — right on desktop, below on mobile */}
-              <div className="w-full lg:w-1/2 lg:min-w-0 border border-gray-200 dark:border-gray-700 rounded-lg p-4">
+              <div className="w-full lg:w-1/2 lg:min-w-0">
+                <h2 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-2 text-center">Word Search</h2>
+                <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-4">
                 {dynamicFilterOptions && (
                   <SermonFilters
                     options={dynamicFilterOptions}
@@ -972,6 +977,7 @@ function HomeContent() {
                   totalPages={totalPages}
                   onPageChange={setPage}
                 />
+                </div>
               </div>
             </div>
           </>
