@@ -11,6 +11,7 @@ export default function SearchResultList({
   searchMode,
   sortControl,
   pageSizeControl,
+  twoColumn,
 }: {
   sermons: SermonMeta[];
   totalCount: number;
@@ -20,6 +21,7 @@ export default function SearchResultList({
   searchMode?: SearchMode;
   sortControl?: ReactNode;
   pageSizeControl?: ReactNode;
+  twoColumn?: boolean;
 }) {
   if (totalCount === 0) {
     if (snippetsLoading) {
@@ -45,7 +47,7 @@ export default function SearchResultList({
   }
 
   return (
-    <div className="space-y-3">
+    <div>
       <div className="flex items-center justify-between pt-4 mb-4">
         <div className="flex items-center gap-4">
           <p className="text-base sm:text-sm text-gray-500 dark:text-gray-400">
@@ -55,16 +57,18 @@ export default function SearchResultList({
         </div>
         {sortControl}
       </div>
-      {sermons.map((sermon) => (
-        <SearchResultCard
-          key={sermon.id}
-          sermon={sermon}
-          snippets={snippets[sermon.id]}
-          loading={snippetsLoading && !snippets[sermon.id]}
-          query={query}
-          searchMode={searchMode}
-        />
-      ))}
+      <div className={twoColumn ? "grid grid-cols-1 lg:grid-cols-2 gap-3" : "space-y-3"}>
+        {sermons.map((sermon) => (
+          <SearchResultCard
+            key={sermon.id}
+            sermon={sermon}
+            snippets={snippets[sermon.id]}
+            loading={snippetsLoading && !snippets[sermon.id]}
+            query={query}
+            searchMode={searchMode}
+          />
+        ))}
+      </div>
     </div>
   );
 }

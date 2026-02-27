@@ -123,7 +123,6 @@ function AiSearchResultInner({ query, submitCount }: { query: string; submitCoun
     if (contextCacheRef.current && contextCacheRef.current.query === q) {
       return contextCacheRef.current;
     }
-
     const res = await fetch("/api/ai-context", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -266,8 +265,10 @@ function AiSearchResultInner({ query, submitCount }: { query: string; submitCoun
 
   // Submit when query changes (from the search bar), skip if restored from cache.
   // Also re-submit when submitCount bumps (user clicked send for same query).
-  const lastQuery = useRef(cached.current ? query : "");
-  const lastSubmitCount = useRef(submitCount ?? 0);
+  // Only skip the initial submit if we actually have a cached response to display.
+  const hasRestoredResponse = !!(cached.current?.response);
+  const lastQuery = useRef(hasRestoredResponse ? query : "");
+  const lastSubmitCount = useRef(hasRestoredResponse ? (submitCount ?? 0) : 0);
   useEffect(() => {
     if (!query.trim()) {
       // Query cleared — abort and reset

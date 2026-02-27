@@ -155,7 +155,16 @@ export interface AiContextResponse {
 }
 
 export async function POST(request: Request) {
-  const { query } = await request.json();
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return new Response(JSON.stringify({ error: "Invalid request body" }), {
+      status: 400,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+  const { query } = body;
 
   if (!query || typeof query !== "string" || query.trim().length === 0) {
     return new Response(JSON.stringify({ error: "Query is required" }), {

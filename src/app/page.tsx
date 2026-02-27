@@ -56,6 +56,8 @@ interface CachedState {
   filterPassage?: string;
   filterDateFrom?: string;
   filterDateTo?: string;
+  aiPanelHidden?: boolean;
+  searchPanelHidden?: boolean;
 }
 
 function readCache(query: string, page: number): CachedState | null {
@@ -141,6 +143,10 @@ function HomeContent() {
     }
   );
   const [activeComboButton, setActiveComboButton] = useState<ComboButton>("both");
+  const [aiPanelHidden, setAiPanelHidden] = useState(cached.current?.aiPanelHidden ?? false);
+  const aiPanelHiddenRef = useRef(cached.current?.aiPanelHidden ?? false);
+  aiPanelHiddenRef.current = aiPanelHidden;
+  const [searchPanelHidden, setSearchPanelHidden] = useState(cached.current?.searchPanelHidden ?? false);
   const viewMode: ViewMode = searchMode === "combined" ? "combined" : searchMode === "ai" ? "ai" : "search";
   // The effective search mode for phrase filtering, snippets, etc.
   const effectiveSearchMode: SearchMode = searchMode === "combined" ? searchSubMode : searchMode;
@@ -191,7 +197,7 @@ function HomeContent() {
       try {
         sessionStorage.setItem(
           CACHE_KEY,
-          JSON.stringify({ query, page, results, snippets: cachedSnippets, sortBy, pageSize, searchMode, searchSubMode, aiQuery, filterPreacher, filterSeries, filterKeyword, filterPassage, filterDateFrom, filterDateTo })
+          JSON.stringify({ query, page, results, snippets: cachedSnippets, sortBy, pageSize, searchMode, searchSubMode, aiQuery, filterPreacher, filterSeries, filterKeyword, filterPassage, filterDateFrom, filterDateTo, aiPanelHidden, searchPanelHidden })
         );
       } catch {}
     } else if (!isSearching) {
@@ -199,11 +205,11 @@ function HomeContent() {
       try {
         sessionStorage.setItem(
           CACHE_KEY,
-          JSON.stringify({ query: "", page, results: [], snippets: {}, sortBy, pageSize, searchMode, searchSubMode, aiQuery, filterPreacher, filterSeries, filterKeyword, filterPassage, filterDateFrom, filterDateTo })
+          JSON.stringify({ query: "", page, results: [], snippets: {}, sortBy, pageSize, searchMode, searchSubMode, aiQuery, filterPreacher, filterSeries, filterKeyword, filterPassage, filterDateFrom, filterDateTo, aiPanelHidden, searchPanelHidden })
         );
       } catch {}
     }
-  }, [query, page, results, snippets, snippetsLoading, isSearching, sortBy, pageSize, searchMode, searchSubMode, aiQuery, filterPreacher, filterSeries, filterKeyword, filterPassage, filterDateFrom, filterDateTo]);
+  }, [query, page, results, snippets, snippetsLoading, isSearching, sortBy, pageSize, searchMode, searchSubMode, aiQuery, filterPreacher, filterSeries, filterKeyword, filterPassage, filterDateFrom, filterDateTo, aiPanelHidden, searchPanelHidden]);
 
   // Save scroll position continuously (throttled via rAF)
   useEffect(() => {
@@ -427,11 +433,10 @@ function HomeContent() {
   const handleAiOnlySubmit = useCallback(() => {
     if (inputValue.trim()) {
       const q = inputValue.trim();
-      if (q !== aiQueryRef.current) {
-        setAiQuery(q);
-        setAiSubmitCount((c) => c + 1);
-        logSearch(q, "ai");
-      }
+      if (q !== aiQueryRef.current) logSearch(q, "ai");
+      setAiQuery(q);
+      setAiSubmitCount((c) => c + 1);
+      setAiPanelHidden(false);
     }
   }, [inputValue, logSearch]);
 
@@ -439,6 +444,7 @@ function HomeContent() {
   const handleWordSearchSubmit = useCallback(() => {
     if (inputValue.trim()) {
       logSearch(inputValue.trim(), "standard");
+      setSearchPanelHidden(false);
       startTransition(() => {
         runSearch(inputValue.trim(), "combined");
       });
@@ -449,14 +455,19 @@ function HomeContent() {
   const handleAiSubmit = useCallback(() => {
     if (inputValue.trim()) {
       const q = inputValue.trim();
-      // Only re-trigger AI if the query actually changed
-      if (q !== aiQueryRef.current) {
+      // Always bump submitCount if the AI panel was hidden (component remounts
+      // with current count, so it needs a fresh bump to detect the change)
+      const wasAiHidden = aiPanelHiddenRef.current;
+      // Only re-trigger AI if the query actually changed (or panel was hidden)
+      if (q !== aiQueryRef.current || wasAiHidden) {
         setAiQuery(q);
         setAiSubmitCount((c) => c + 1);
-        logSearch(q, "ai");
+        if (q !== aiQueryRef.current) logSearch(q, "ai");
       }
       // In combined mode, also trigger FlexSearch
       if (searchModeRef.current === "combined") {
+        setAiPanelHidden(false);
+        setSearchPanelHidden(false);
         startTransition(() => {
           runSearch(q, "combined");
         });
@@ -912,7 +923,7 @@ function HomeContent() {
   }, [query, hasPhrases, pageIds, searchMode]);
 
   return (
-      <div className={`flex-1 w-full min-h-dvh bg-gray-50 dark:bg-gray-950 mx-auto px-4 py-6 sm:py-8 ${searchMode === "combined" ? "max-w-7xl" : "max-w-3xl"}`} style={restoring ? { opacity: 0 } : undefined}>
+      <div className={`flex flex-col flex-1 w-full min-h-dvh bg-gray-50 dark:bg-gray-950 mx-auto px-4 py-6 sm:py-8 ${searchMode === "combined" ? "max-w-7xl" : "max-w-3xl"}`} style={restoring ? { opacity: 0 } : undefined}>
         <header className="text-center mb-10">
           <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100 mb-2">
             {process.env.NEXT_PUBLIC_SITE_TITLE || "Sermon Transcripts"}
@@ -942,24 +953,68 @@ function HomeContent() {
           {/* <div className="hidden sm:flex justify-center mt-2 mb-2">{modePills}</div> */}
         </div>
 
-        {(loading && results.length === 0) ? null : searchMode === "ai" ? (
+        {searchMode === "ai" ? (
           <AiSearchResult query={aiQuery} submitCount={aiSubmitCount} />
         ) : searchMode === "combined" ? (
           <>
             {/* Side-by-side on desktop, stacked on mobile */}
-            <div className="flex flex-col lg:flex-row lg:items-stretch gap-6">
+            <div className={`flex flex-col lg:flex-row lg:items-stretch gap-6 ${(aiPanelHidden || searchPanelHidden) ? "flex-1" : ""}`}>
               {/* AI panel — left on desktop, top on mobile */}
-              <div className="w-full lg:w-1/2 lg:min-w-0 flex flex-col">
-                <h2 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-2 text-center">AI Answer</h2>
-                <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 flex-1 bg-gray-100 dark:bg-gray-800">
+              <div className={`w-full flex flex-col ${searchPanelHidden ? "" : "lg:w-1/2"} lg:min-w-0`} style={aiPanelHidden ? { display: 'none' } : undefined}>
+                <div className="relative flex items-center justify-center mb-2">
+                  {!searchPanelHidden && (
+                  <button
+                    onClick={() => setSearchPanelHidden(true)}
+                    className="absolute left-0 flex items-center gap-1.5 text-sm font-medium text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 cursor-pointer transition-colors"
+                    title="Expand AI panel"
+                  >
+                    <span>AI</span>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="13 17 18 12 13 7"/><polyline points="6 17 11 12 6 7"/></svg>
+                  </button>
+                  )}
+                  <h2 className="text-sm font-medium text-gray-500 dark:text-gray-400 text-center">AI Answer</h2>
+                  {searchPanelHidden && (
+                  <button
+                    onClick={() => setSearchPanelHidden(false)}
+                    className="absolute right-0 flex items-center gap-1.5 text-sm font-medium text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 cursor-pointer transition-colors"
+                    title="Show search panel"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="11 17 6 12 11 7"/><polyline points="18 17 13 12 18 7"/></svg>
+                    <span>Search</span>
+                  </button>
+                  )}
+                </div>
+                <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 bg-gray-100 dark:bg-gray-800 flex-1">
                   <AiSearchResult query={aiQuery} submitCount={aiSubmitCount} />
                 </div>
               </div>
 
               {/* Sermon list — right on desktop, below on mobile */}
-              <div className="w-full lg:w-1/2 lg:min-w-0">
-                <h2 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-2 text-center">Search Results</h2>
-                <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 bg-gray-100 dark:bg-gray-800">
+              <div className={`w-full ${aiPanelHidden ? "flex flex-col" : "lg:w-1/2"} lg:min-w-0`} style={searchPanelHidden ? { display: 'none' } : undefined}>
+                <div className="relative flex items-center justify-center mb-2">
+                  {aiPanelHidden && (
+                  <button
+                    onClick={() => setAiPanelHidden(false)}
+                    className="absolute left-0 flex items-center gap-1.5 text-sm font-medium text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 cursor-pointer transition-colors"
+                    title="Show AI panel"
+                  >
+                    <span>AI</span>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="13 17 18 12 13 7"/><polyline points="6 17 11 12 6 7"/></svg>
+                  </button>
+                  )}
+                  <h2 className="text-sm font-medium text-gray-500 dark:text-gray-400 text-center">Search Results</h2>
+                  {!aiPanelHidden && (
+                  <button
+                    onClick={() => setAiPanelHidden(true)}
+                    className="absolute right-0 flex items-center gap-1.5 text-sm font-medium text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 cursor-pointer transition-colors"
+                    title="Expand search panel"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="11 17 6 12 11 7"/><polyline points="18 17 13 12 18 7"/></svg>
+                    <span>Search</span>
+                  </button>
+                  )}
+                </div>
+                <div className={`border border-gray-200 dark:border-gray-700 rounded-lg p-4 bg-gray-100 dark:bg-gray-800 ${aiPanelHidden ? "flex-1" : ""}`}>
                 {dynamicFilterOptions && (
                   <SermonFilters
                     options={dynamicFilterOptions}
@@ -998,6 +1053,7 @@ function HomeContent() {
                     searchMode={searchSubMode}
                     sortControl={<SortControl sortBy={sortBy} onSortChange={handleSortChange} isSearching />}
                     pageSizeControl={pageSizeControl}
+                    twoColumn={aiPanelHidden}
                   />
                 ) : (
                   <SermonList
@@ -1005,6 +1061,7 @@ function HomeContent() {
                     totalCount={displayResults.length}
                     sortControl={<SortControl sortBy={sortBy} onSortChange={handleSortChange} />}
                     pageSizeControl={pageSizeControl}
+                    twoColumn={aiPanelHidden}
                   />
                 )}
                 <Pagination
@@ -1014,9 +1071,10 @@ function HomeContent() {
                 />
                 </div>
               </div>
+
             </div>
           </>
-        ) : isSearching ? (
+        ) : (loading && results.length === 0) ? null : isSearching ? (
           <>
             {dynamicFilterOptions && (
               <SermonFilters
