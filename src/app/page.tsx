@@ -947,11 +947,11 @@ function HomeContent() {
         ) : searchMode === "combined" ? (
           <>
             {/* Side-by-side on desktop, stacked on mobile */}
-            <div className="flex flex-col lg:flex-row gap-6">
+            <div className="flex flex-col lg:flex-row lg:items-stretch gap-6">
               {/* AI panel — left on desktop, top on mobile */}
-              <div className="w-full lg:w-1/2 lg:min-w-0">
+              <div className="w-full lg:w-1/2 lg:min-w-0 flex flex-col">
                 <h2 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-2 text-center">AI Answer</h2>
-                <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 lg:min-h-[calc(100vh-2rem)]">
+                <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 flex-1">
                   <AiSearchResult query={aiQuery} submitCount={aiSubmitCount} />
                 </div>
               </div>
