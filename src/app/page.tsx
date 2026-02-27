@@ -403,10 +403,10 @@ function HomeContent() {
 
     // In AI or combined mode, don't auto-search — wait for explicit submit
     if (searchModeRef.current === "ai" || searchModeRef.current === "combined") {
-      // Clear resets the AI query so AiSearchResult aborts and resets
+      // Clear resets the AI query and restores the full sermon list
       if (!q.trim()) {
         setAiQuery("");
-        setQuery("");
+        runSearch("", searchModeRef.current);
       }
       return;
     }

@@ -413,7 +413,8 @@ function AiSearchResultInner({ query, submitCount }: { query: string; submitCoun
       {loading && (
         <div className="flex items-center gap-2 mb-4 text-gray-500 dark:text-gray-400">
           <svg
-            className="animate-spin h-4 w-4"
+            className="animate-spin"
+            style={{ width: fontSizeMap[fontSize], height: fontSizeMap[fontSize] }}
             xmlns="http://www.w3.org/2000/svg"
             fill="none"
             viewBox="0 0 24 24"
