@@ -902,7 +902,7 @@ function HomeContent() {
             showSend={searchMode === "ai" || searchMode === "combined"}
           />
           <p className="text-center text-xs text-gray-400 dark:text-gray-600 mt-2">
-            Searches are logged to improve the quality of results.
+            Please note that searches are logged to improve the quality of results.
           </p>
           <div className="flex justify-center mt-2 mb-2">{modePills}</div>
         </div>
