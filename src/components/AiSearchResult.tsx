@@ -107,6 +107,7 @@ function AiSearchResultInner({ query, submitCount }: { query: string; submitCoun
   const [response, setResponse] = useState(cached.current?.response ?? "");
   const [sources, setSources] = useState<Source[]>(cached.current?.sources ?? []);
   const [loading, setLoading] = useState(false);
+  const [copied, setCopied] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [submitted, setSubmitted] = useState(!!cached.current);
   const [provider, setProvider] = useState<AiProvider>(initProvider);
@@ -329,41 +330,72 @@ function AiSearchResultInner({ query, submitCount }: { query: string; submitCoun
     handleSubmit(query);
   }, [query, submitted, handleSubmit, streamAnswer]);
 
+  const handleCopy = useCallback(() => {
+    if (!response) return;
+    navigator.clipboard.writeText(response).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  }, [response]);
+
   const providerPills = (
-    <div className="flex gap-1 items-center font-sans" style={{ fontFamily: "var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif" }}>
-      <span className="text-xs text-gray-400 dark:text-gray-500 mr-1">Model:</span>
-      {AI_PROVIDERS.map((p) => (
+    <div className="flex items-center justify-between font-sans" style={{ fontFamily: "var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif" }}>
+      <div className="flex gap-1 items-center">
+        <span className="text-xs text-gray-400 dark:text-gray-500 mr-1">Model:</span>
+        {AI_PROVIDERS.map((p) => (
+          <button
+            key={p.value}
+            type="button"
+            onClick={() => handleProviderChange(p.value)}
+            className={`px-2.5 py-1 text-xs rounded-full cursor-pointer transition-colors ${
+              provider === p.value
+                ? "bg-gray-300 text-gray-700 dark:bg-gray-700 dark:text-gray-300"
+                : "text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300"
+            }`}
+          >
+            {p.label}
+          </button>
+        ))}
+      </div>
+      <div className="flex items-center gap-1">
+        {response && (
+          <button
+            type="button"
+            onClick={handleCopy}
+            aria-label="Copy response"
+            className="p-1.5 rounded-full text-gray-400 dark:text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-800 transition-colors cursor-pointer"
+          >
+            {copied ? (
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M20 6L9 17l-5-5" />
+              </svg>
+            ) : (
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+              </svg>
+            )}
+          </button>
+        )}
         <button
-          key={p.value}
           type="button"
-          onClick={() => handleProviderChange(p.value)}
-          className={`px-2.5 py-1 text-xs rounded-full cursor-pointer transition-colors ${
-            provider === p.value
-              ? "bg-gray-300 text-gray-700 dark:bg-gray-700 dark:text-gray-300"
-              : "text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300"
-          }`}
+          onClick={() => setShowSettings(true)}
+          aria-label="Reading settings"
+          className="p-1.5 rounded-full text-gray-400 dark:text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-800 transition-colors cursor-pointer"
         >
-          {p.label}
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="12" cy="12" r="3" />
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+          </svg>
         </button>
-      ))}
-      <button
-        type="button"
-        onClick={() => setShowSettings(true)}
-        aria-label="Reading settings"
-        className="ml-2 p-1.5 rounded-full text-gray-400 dark:text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-800 transition-colors cursor-pointer"
-      >
-        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-          <circle cx="12" cy="12" r="3" />
-          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
-        </svg>
-      </button>
+      </div>
     </div>
   );
 
   if (!submitted && !query.trim()) {
     return (
       <div>
-        <div className="flex justify-center mb-4">{providerPills}</div>
+        <div className="mb-4">{providerPills}</div>
         <div className="text-center pt-10 lg:pt-24 pb-4 text-gray-500 dark:text-gray-400">
           <p style={{ fontSize: fontSizeMap[fontSize], fontFamily: fontFamilyMap[fontFamily], lineHeight: 1.6 }}>
             AI will attempt to provide an answer or summary here when you submit a query.
@@ -376,7 +408,7 @@ function AiSearchResultInner({ query, submitCount }: { query: string; submitCoun
 
   return (
     <div>
-      <div className="flex justify-center mb-4">{providerPills}</div>
+      <div className="mb-4">{providerPills}</div>
       {/* Loading indicator */}
       {loading && (
         <div className="flex items-center gap-2 mb-4 text-gray-500 dark:text-gray-400">
