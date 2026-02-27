@@ -45,7 +45,7 @@ export async function POST(request: Request) {
     const result = streamText({
       model: PROVIDER_MODELS[provider](),
       system: AI_SYSTEM_PROMPT,
-      prompt: `Here are relevant excerpts from sermons:\n\n${context}\n\nUser's question: ${query}`,
+      prompt: `Here are relevant excerpts from sermons:\n\n${context}\n\nUser's query: ${query}`,
     });
 
     return result.toTextStreamResponse({

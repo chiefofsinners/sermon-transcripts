@@ -1,4 +1,4 @@
-export type SearchMode = "all" | "any" | "exact" | "ai";
+export type SearchMode = "all" | "any" | "exact" | "ai" | "combined";
 
 export interface SermonMeta {
   [key: string]: string | number | boolean | null;

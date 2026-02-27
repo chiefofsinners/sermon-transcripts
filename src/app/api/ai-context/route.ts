@@ -66,7 +66,7 @@ async function expandQuery(query: string): Promise<string> {
     const response = await openai.chat.completions.create({
       model: AI_UTILITY_MODEL,
       max_completion_tokens: 1024,
-      reasoning_effort: "low",
+      reasoning_effort: "minimal",
       messages: [
         {
           role: "system",
@@ -99,7 +99,7 @@ async function classifyQuery(query: string): Promise<QueryScope> {
     const response = await openai.chat.completions.create({
       model: AI_UTILITY_MODEL,
       max_completion_tokens: 256,
-      reasoning_effort: "low",
+      reasoning_effort: "minimal",
       messages: [
         {
           role: "system",
@@ -176,11 +176,12 @@ export async function POST(request: Request) {
   const budget = BUDGET_PROFILES[scope];
 
   // 2. Embed the expanded query
-  const embeddingRes = await openai.embeddings.create({
-    model: EMBEDDING_MODEL,
-    input: expandedQuery,
-  });
-  const queryEmbedding = embeddingRes.data[0].embedding;
+  const embeddingRes = await pinecone.inference.embed(
+    EMBEDDING_MODEL,
+    [expandedQuery],
+    { inputType: "query" },
+  );
+  const queryEmbedding = embeddingRes.data[0].values!;
 
   // 3. Query Pinecone with budget-driven topK
   const ns = namespace ? index.namespace(namespace) : index;

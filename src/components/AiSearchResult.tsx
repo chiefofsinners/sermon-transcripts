@@ -92,7 +92,14 @@ export default function AiSearchResult({ query, submitCount }: { query: string; 
   );
 }
 
+const fontSizeMap = { small: "0.9rem", medium: "1rem", large: "1.2rem", xlarge: "1.4rem" } as const;
+const fontFamilyMap = {
+  sans: "var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif",
+  serif: 'Georgia, Cambria, "Times New Roman", Times, serif',
+} as const;
+
 function AiSearchResultInner({ query, submitCount }: { query: string; submitCount?: number }) {
+  const { fontSize, fontFamily } = useReadingSettings();
   const [showSettings, setShowSettings] = useState(false);
   const initStore = useRef(readCacheStore());
   const initProvider = initStore.current?.lastProvider ?? "anthropic";
@@ -356,11 +363,10 @@ function AiSearchResultInner({ query, submitCount }: { query: string; submitCoun
   if (!submitted && !query.trim()) {
     return (
       <div>
-        <div className="flex justify-end mb-4">{providerPills}</div>
-        <div className="text-center py-12 text-gray-500 dark:text-gray-400">
-          <p className="text-lg mb-2">Ask a question about the sermons</p>
-          <p className="text-sm">
-            e.g. &ldquo;What does the Bible say about prayer?&rdquo; or &ldquo;What has been preached about justification by faith?&rdquo;
+        <div className="flex justify-center mb-4">{providerPills}</div>
+        <div className="text-center pt-10 lg:pt-24 pb-4 text-gray-500 dark:text-gray-400">
+          <p style={{ fontSize: fontSizeMap[fontSize], fontFamily: fontFamilyMap[fontFamily], lineHeight: 1.6 }}>
+            AI will attempt to provide an answer or summary here when you submit a query.
           </p>
         </div>
         {showSettings && <ReadingSettingsOverlay onClose={() => setShowSettings(false)} />}
@@ -369,8 +375,8 @@ function AiSearchResultInner({ query, submitCount }: { query: string; submitCoun
   }
 
   return (
-    <div className="mt-4">
-      <div className="flex justify-end mb-4">{providerPills}</div>
+    <div>
+      <div className="flex justify-center mb-4">{providerPills}</div>
       {/* Loading indicator */}
       {loading && (
         <div className="flex items-center gap-2 mb-4 text-gray-500 dark:text-gray-400">
@@ -394,7 +400,7 @@ function AiSearchResultInner({ query, submitCount }: { query: string; submitCoun
               d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
             />
           </svg>
-          <span className="text-sm">Searching sermons and generating answer...</span>
+          <span style={{ fontSize: fontSizeMap[fontSize], fontFamily: fontFamilyMap[fontFamily] }}>Searching sermons and generating answer...</span>
         </div>
       )}
 

@@ -14,11 +14,19 @@ import { parseQuery, stripQuotes } from "@/lib/parseQuery";
 import { buildBibleIndex, matchesPassageFilter, parsePassageFilter } from "@/lib/bible";
 import type { SermonMeta, SermonSnippet, SearchMode } from "@/lib/types";
 
-const SEARCH_MODES: { value: SearchMode; label: string; shortLabel: string }[] = [
+type ViewMode = "combined" | "search" | "ai";
+type SearchSubMode = "any" | "all" | "exact";
+
+const VIEW_MODES: { value: ViewMode; label: string; shortLabel: string }[] = [
+  { value: "combined", label: "Combined", shortLabel: "Combo" },
+  { value: "search", label: "Search", shortLabel: "Search" },
+  { value: "ai", label: "Ask AI", shortLabel: "AI" },
+];
+
+const SEARCH_SUB_MODES: { value: SearchSubMode; label: string; shortLabel: string }[] = [
   { value: "any", label: "Any word", shortLabel: "Any" },
   { value: "all", label: "All words", shortLabel: "All" },
   { value: "exact", label: "Exact phrase", shortLabel: "Exact" },
-  { value: "ai", label: "Ask AI", shortLabel: "AI" },
 ];
 
 const PAGE_SIZES = [10, 25, 50, 100] as const;
@@ -30,7 +38,7 @@ const NAV_LIST_KEY = "sermon-nav-list";
 // Module-level cache for filter options (persists across client-side navigations)
 let cachedFilterOptions: FilterOptions | null = null;
 
-const DEFAULT_SEARCH_MODE: SearchMode = "all";
+const DEFAULT_SEARCH_MODE: SearchMode = "combined";
 
 interface CachedState {
   query: string;
@@ -40,6 +48,8 @@ interface CachedState {
   sortBy?: SortBy;
   pageSize?: number;
   searchMode?: SearchMode;
+  searchSubMode?: SearchSubMode;
+  aiQuery?: string;
   filterPreacher?: string;
   filterSeries?: string;
   filterKeyword?: string;
@@ -58,6 +68,11 @@ function readCache(query: string, page: number): CachedState | null {
       if (cached.query || cached.sortBy || cached.filterPreacher || cached.filterSeries || cached.filterPassage) {
         return cached;
       }
+    }
+    // If URL params don't match but we have a cached AI query, still restore
+    // (combined mode may have query in cache but not in URL on first load)
+    if (cached.aiQuery && cached.results?.length) {
+      return cached;
     }
   } catch {}
   return null;
@@ -85,8 +100,8 @@ function HomeContent() {
 
   const [query, setQuery] = useState(cached.current?.query ?? initialQuery);
   const [inputValue, setInputValue] = useState(query);
-  const [aiQuery, setAiQuery] = useState(initialMode === "ai" ? (cached.current?.query ?? initialQuery) : "");
-  const [aiSubmitCount, setAiSubmitCount] = useState(0);
+  const [aiQuery, setAiQuery] = useState(cached.current?.aiQuery ?? (initialMode === "ai" || initialMode === "combined" ? initialQuery : ""));
+  const [aiSubmitCount, setAiSubmitCount] = useState(cached.current?.aiQuery ? 1 : 0);
   const [, startTransition] = useTransition();
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [results, setResults] = useState<SermonMeta[]>(() => {
@@ -94,7 +109,7 @@ function HomeContent() {
     if (alreadyLoaded) {
       if (!initialQuery.trim()) return getAllSermons();
       const stripped = stripQuotes(initialQuery);
-      return initialMode === "all" ? searchAll(stripped) : initialMode === "any" ? searchAny(stripped) : search(stripped);
+      return initialMode === "any" ? searchAny(stripped) : (initialMode === "all" || initialMode === "combined") ? searchAll(stripped) : search(stripped);
     }
     return [];
   });
@@ -105,6 +120,7 @@ function HomeContent() {
     cached.current?.snippets ?? {}
   );
   const [snippetsLoading, setSnippetsLoading] = useState(false);
+  const [restoring, setRestoring] = useState(!!cached.current?.query);
   const [page, setPage] = useState(cached.current?.page ?? initialPage);
   const [sortBy, setSortBy] = useState<SortBy>(cached.current?.sortBy ?? initialSort);
   const [filterPreacher, setFilterPreacher] = useState(cached.current?.filterPreacher ?? initialPreacher);
@@ -115,6 +131,16 @@ function HomeContent() {
   const [filterDateTo, setFilterDateTo] = useState(cached.current?.filterDateTo ?? initialDateTo);
   const [pageSize, setPageSize] = useState(cached.current?.pageSize ?? initialPageSize);
   const [searchMode, setSearchMode] = useState<SearchMode>(cached.current?.searchMode ?? initialMode);
+  const [searchSubMode, setSearchSubMode] = useState<SearchSubMode>(
+    () => {
+      if (cached.current?.searchSubMode) return cached.current.searchSubMode;
+      const m = cached.current?.searchMode ?? initialMode;
+      return m === "any" || m === "all" || m === "exact" ? m : "all";
+    }
+  );
+  const viewMode: ViewMode = searchMode === "combined" ? "combined" : searchMode === "ai" ? "ai" : "search";
+  // The effective search mode for phrase filtering, snippets, etc.
+  const effectiveSearchMode: SearchMode = searchMode === "combined" ? searchSubMode : searchMode;
   const [filterOptions, setFilterOptions] = useState<FilterOptions | null>(cachedFilterOptions);
 
   const abortRef = useRef<AbortController | null>(null);
@@ -152,16 +178,17 @@ function HomeContent() {
   // Persist state to sessionStorage for back-navigation restore
   useEffect(() => {
     if (isSearching && results.length > 0 && !snippetsLoading) {
-      // Only cache snippets that have content (phrase queries store empty arrays for non-matches
-      // which are needed for filtering but not worth persisting)
+      // Cache all snippets for the current page (including empty ones) so
+      // back-navigation doesn't re-fetch and cause a visible blink.
       const cachedSnippets: Record<string, SermonSnippet[]> = {};
+      const pageIdSet = new Set(paginatedResults.map((s) => s.id));
       for (const [id, s] of Object.entries(snippets)) {
-        if (s.length > 0) cachedSnippets[id] = s;
+        if (s.length > 0 || pageIdSet.has(id)) cachedSnippets[id] = s;
       }
       try {
         sessionStorage.setItem(
           CACHE_KEY,
-          JSON.stringify({ query, page, results, snippets: cachedSnippets, sortBy, pageSize, searchMode, filterPreacher, filterSeries, filterKeyword, filterPassage, filterDateFrom, filterDateTo })
+          JSON.stringify({ query, page, results, snippets: cachedSnippets, sortBy, pageSize, searchMode, searchSubMode, aiQuery, filterPreacher, filterSeries, filterKeyword, filterPassage, filterDateFrom, filterDateTo })
         );
       } catch {}
     } else if (!isSearching) {
@@ -169,11 +196,11 @@ function HomeContent() {
       try {
         sessionStorage.setItem(
           CACHE_KEY,
-          JSON.stringify({ query: "", page, results: [], snippets: {}, sortBy, pageSize, searchMode, filterPreacher, filterSeries, filterKeyword, filterPassage, filterDateFrom, filterDateTo })
+          JSON.stringify({ query: "", page, results: [], snippets: {}, sortBy, pageSize, searchMode, searchSubMode, aiQuery, filterPreacher, filterSeries, filterKeyword, filterPassage, filterDateFrom, filterDateTo })
         );
       } catch {}
     }
-  }, [query, page, results, snippets, snippetsLoading, isSearching, sortBy, pageSize, searchMode, filterPreacher, filterSeries, filterKeyword, filterPassage, filterDateFrom, filterDateTo]);
+  }, [query, page, results, snippets, snippetsLoading, isSearching, sortBy, pageSize, searchMode, searchSubMode, aiQuery, filterPreacher, filterSeries, filterKeyword, filterPassage, filterDateFrom, filterDateTo]);
 
   // Save scroll position continuously (throttled via rAF)
   useEffect(() => {
@@ -193,14 +220,19 @@ function HomeContent() {
 
   // Restore scroll position after content loads
   useEffect(() => {
-    if (!loading && savedScrollY.current !== null) {
-      const y = savedScrollY.current;
-      savedScrollY.current = null;
-      requestAnimationFrame(() => {
-        window.scrollTo(0, y);
-      });
+    if (!loading && restoring) {
+      if (savedScrollY.current !== null) {
+        const y = savedScrollY.current;
+        savedScrollY.current = null;
+        requestAnimationFrame(() => {
+          window.scrollTo(0, y);
+          setRestoring(false);
+        });
+      } else {
+        setRestoring(false);
+      }
     }
-  }, [loading]);
+  }, [loading, restoring]);
 
   // Load index and filter options (skip if already in memory)
   useEffect(() => {
@@ -219,7 +251,7 @@ function HomeContent() {
         // Only set results if we didn't restore from cache
         if (!cached.current) {
           if (initialQuery.trim()) {
-            setResults(initialMode === "any" ? searchAny(initialQuery) : initialMode === "all" ? searchAll(stripQuotes(initialQuery)) : search(stripQuotes(initialQuery)));
+            setResults(initialMode === "any" ? searchAny(initialQuery) : (initialMode === "all" || initialMode === "combined") ? searchAll(stripQuotes(initialQuery)) : search(stripQuotes(initialQuery)));
           } else {
             setResults(getAllSermons());
           }
@@ -238,11 +270,11 @@ function HomeContent() {
   // Compute effective phrases/terms based on search mode.
   // "exact" treats the entire query as one phrase; "all"/"any" respect manual quotes.
   const effectiveParsed = useMemo(() => {
-    if (searchMode === "exact" && query.trim()) {
+    if (effectiveSearchMode === "exact" && query.trim()) {
       return { phrases: [stripQuotes(query.trim()).toLowerCase()], terms: [] };
     }
     return parseQuery(query);
-  }, [query, searchMode]);
+  }, [query, effectiveSearchMode]);
 
   const hasPhrases = effectiveParsed.phrases.length > 0;
 
@@ -256,11 +288,11 @@ function HomeContent() {
   // Build the query string sent to the snippets API.
   // For "exact" mode, wrap in quotes so the API treats the full query as a phrase.
   const snippetApiQuery = useMemo(() => {
-    if (searchMode === "exact" && query.trim()) {
+    if (effectiveSearchMode === "exact" && query.trim()) {
       return `"${stripQuotes(query.trim())}"`;
     }
     return query.trim();
-  }, [query, searchMode]);
+  }, [query, effectiveSearchMode]);
 
   // Phrase-query snippet fetch (all IDs — needed for baseFiltered phrase filtering)
   useEffect(() => {
@@ -329,6 +361,8 @@ function HomeContent() {
 
   const searchModeRef = useRef(searchMode);
   searchModeRef.current = searchMode;
+  const searchSubModeRef = useRef(searchSubMode);
+  searchSubModeRef.current = searchSubMode;
 
   const searchLogTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const logSearch = useCallback((q: string, type: string, mode?: string, provider?: string) => {
@@ -347,6 +381,8 @@ function HomeContent() {
     setPage(1);
     // AI mode handles its own search via the AiSearchResult component
     if (mode === "ai") return;
+    // Combined mode uses the current sub-mode for FlexSearch
+    const effectiveMode = mode === "combined" ? searchSubModeRef.current : mode;
     if (q.trim() !== "") {
       setSortBy((prev) => (prev === "date-desc" ? "best-match" : prev));
     } else {
@@ -356,8 +392,8 @@ function HomeContent() {
     if (q.trim() === "") {
       setResults(getAllSermons());
     } else {
-      logSearch(q, "standard", mode);
-      setResults(mode === "any" ? searchAny(q) : searchAll(stripQuotes(q)));
+      logSearch(q, "standard", effectiveMode);
+      setResults(effectiveMode === "any" ? searchAny(q) : effectiveMode === "exact" ? search(stripQuotes(q)) : searchAll(stripQuotes(q)));
     }
   }, [logSearch]);
 
@@ -365,8 +401,8 @@ function HomeContent() {
     // Update input immediately so typing is never laggy
     setInputValue(q);
 
-    // In AI mode, don't auto-search — wait for explicit submit
-    if (searchModeRef.current === "ai") {
+    // In AI or combined mode, don't auto-search — wait for explicit submit
+    if (searchModeRef.current === "ai" || searchModeRef.current === "combined") {
       // Clear resets the AI query so AiSearchResult aborts and resets
       if (!q.trim()) {
         setAiQuery("");
@@ -387,16 +423,29 @@ function HomeContent() {
   const handleAiSubmit = useCallback(() => {
     if (inputValue.trim()) {
       setAiQuery(inputValue.trim());
-      setQuery(inputValue.trim());
       setAiSubmitCount((c) => c + 1);
       logSearch(inputValue.trim(), "ai");
+      // In combined mode, also trigger FlexSearch
+      if (searchModeRef.current === "combined") {
+        startTransition(() => {
+          runSearch(inputValue.trim(), "combined");
+        });
+      } else {
+        setQuery(inputValue.trim());
+      }
     }
-  }, [inputValue, logSearch]);
+  }, [inputValue, logSearch, runSearch]);
 
   const handleModeChange = useCallback((mode: SearchMode) => {
+    const prevEffective = searchModeRef.current === "combined" ? searchSubModeRef.current : searchModeRef.current;
+    const nextEffective = mode === "combined" ? searchSubModeRef.current : mode;
     setSearchMode(mode);
-    if (mode === "ai") {
-      // AI mode handles its own search — don't trigger FlexSearch
+    if (mode === "ai" || mode === "combined") {
+      // AI/combined mode: don't trigger FlexSearch on mode switch — wait for submit
+      return;
+    }
+    // If the effective search mode hasn't changed, keep existing results/snippets
+    if (prevEffective === nextEffective && query.trim()) {
       return;
     }
     // Clear stale snippets and mark as loading so baseFiltered doesn't
@@ -410,7 +459,7 @@ function HomeContent() {
     startTransition(() => {
       runSearch(inputValue, mode);
     });
-  }, [runSearch, inputValue]);
+  }, [runSearch, inputValue, query]);
 
   const handleSortChange = useCallback((v: SortBy) => {
     setSortBy(v);
@@ -683,15 +732,63 @@ function HomeContent() {
     </span>
   );
 
+  const handleViewModeChange = useCallback((vm: ViewMode) => {
+    if (vm === "combined") {
+      handleModeChange("combined");
+    } else if (vm === "ai") {
+      handleModeChange("ai");
+    } else {
+      handleModeChange(searchSubMode);
+    }
+  }, [handleModeChange, searchSubMode]);
+
+  const handleSubModeChange = useCallback((sm: SearchSubMode) => {
+    setSearchSubMode(sm);
+    if (searchModeRef.current === "combined") {
+      // Stay in combined mode — just re-run FlexSearch with the new sub-mode
+      searchSubModeRef.current = sm;
+      if (query.trim()) {
+        setSnippets({});
+        setSnippetsLoading(true);
+        snippetQueryRef.current = '';
+        startTransition(() => {
+          runSearch(query, "combined");
+        });
+      }
+    } else {
+      handleModeChange(sm);
+    }
+  }, [handleModeChange, runSearch, query]);
+
   const modePills = (
     <div className="flex gap-1">
-      {SEARCH_MODES.map((m) => (
+      {VIEW_MODES.map((m) => (
         <button
           key={m.value}
           type="button"
-          onClick={() => handleModeChange(m.value)}
+          onClick={() => handleViewModeChange(m.value)}
           className={`px-3.5 py-1.5 text-sm sm:px-3 sm:py-1 sm:text-xs rounded-full cursor-pointer transition-colors ${
-            searchMode === m.value
+            viewMode === m.value
+              ? "bg-gray-300 text-gray-700 dark:bg-gray-700 dark:text-gray-300"
+              : "text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300"
+          }`}
+        >
+          <span className="sm:hidden">{m.shortLabel}</span>
+          <span className="hidden sm:inline">{m.label}</span>
+        </button>
+      ))}
+    </div>
+  );
+
+  const subModePills = (
+    <div className="flex gap-1">
+      {SEARCH_SUB_MODES.map((m) => (
+        <button
+          key={m.value}
+          type="button"
+          onClick={() => handleSubModeChange(m.value)}
+          className={`px-2.5 py-1 text-xs rounded-full cursor-pointer transition-colors ${
+            searchSubMode === m.value
               ? "bg-gray-300 text-gray-700 dark:bg-gray-700 dark:text-gray-300"
               : "text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300"
           }`}
@@ -724,6 +821,7 @@ function HomeContent() {
   snippetsRef.current = snippets;
   const snippetQueryRef = useRef(query);
   const snippetModeRef = useRef(searchMode);
+  const skipPageSnippetFetch = useRef(!!cached.current?.query);
   useEffect(() => {
     if (pageDebounceRef.current) clearTimeout(pageDebounceRef.current);
 
@@ -779,7 +877,7 @@ function HomeContent() {
   }, [query, hasPhrases, pageIds, searchMode]);
 
   return (
-      <div className="flex-1 max-w-3xl w-full min-h-dvh bg-gray-50 dark:bg-gray-950 mx-auto px-4 py-12">
+      <div className={`flex-1 w-full min-h-dvh bg-gray-50 dark:bg-gray-950 mx-auto px-4 py-12 ${searchMode === "combined" ? "max-w-7xl" : "max-w-3xl"}`} style={restoring ? { opacity: 0 } : undefined}>
         <header className="text-center mb-10">
           <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100 mb-2">
             {process.env.NEXT_PUBLIC_SITE_TITLE || "Sermon Transcripts"}
@@ -790,20 +888,87 @@ function HomeContent() {
           </p>
         </header>
 
-        <div className="mb-4">
+        <div className="mb-2">
           <SearchBar
             value={inputValue}
             onChange={handleSearch}
-            onSubmit={searchMode === "ai" ? handleAiSubmit : undefined}
+            onSubmit={searchMode === "ai" || searchMode === "combined" ? handleAiSubmit : undefined}
             loading={loading}
-            showSend={searchMode === "ai"}
+            showSend={searchMode === "ai" || searchMode === "combined"}
           />
+          <p className="text-center text-xs text-gray-400 dark:text-gray-600 mt-2">
+            Searches are logged to improve the quality of results.
+          </p>
+          <div className="flex justify-center mt-2 mb-2">{modePills}</div>
         </div>
 
-        {loading ? null : searchMode === "ai" ? (
+        {(loading && results.length === 0) ? null : searchMode === "ai" ? (
+          <AiSearchResult query={aiQuery} submitCount={aiSubmitCount} />
+        ) : searchMode === "combined" ? (
           <>
-            <div className="flex justify-end mb-4">{modePills}</div>
-            <AiSearchResult query={aiQuery} submitCount={aiSubmitCount} />
+            {/* Side-by-side on desktop, stacked on mobile */}
+            <div className="flex flex-col lg:flex-row gap-6">
+              {/* AI panel — left on desktop, top on mobile */}
+              <div className="w-full lg:w-1/2 lg:min-w-0 border border-gray-200 dark:border-gray-700 rounded-lg p-4">
+                <AiSearchResult query={aiQuery} submitCount={aiSubmitCount} />
+              </div>
+
+              {/* Sermon list — right on desktop, below on mobile */}
+              <div className="w-full lg:w-1/2 lg:min-w-0 border border-gray-200 dark:border-gray-700 rounded-lg p-4">
+                {dynamicFilterOptions && (
+                  <SermonFilters
+                    options={dynamicFilterOptions}
+                    sortBy={sortBy}
+                    preacher={filterPreacher}
+                    series={filterSeries}
+                    keyword={filterKeyword}
+                    passage={filterPassage}
+                    dateFrom={filterDateFrom}
+                    dateTo={filterDateTo}
+                    bibleIndex={bibleIndex}
+                    pickerBibleIndex={pickerBibleIndex}
+                    onSortChange={handleSortChange}
+                    onPreacherChange={handlePreacherChange}
+                    onSeriesChange={handleSeriesChange}
+                    onKeywordChange={handleKeywordChange}
+                    onPassageChange={handlePassageChange}
+                    onDateFromChange={handleDateFromChange}
+                    onDateToChange={handleDateToChange}
+                    isSearching={isSearching}
+                    toolbar={subModePills}
+                  />
+                )}
+                <Pagination
+                  page={page}
+                  totalPages={totalPages}
+                  onPageChange={setPage}
+                />
+                {isSearching ? (
+                  <SearchResultList
+                    sermons={paginatedResults}
+                    totalCount={displayResults.length}
+                    snippets={snippets}
+                    snippetsLoading={snippetsLoading}
+                    query={query}
+                    searchMode={searchSubMode}
+                    sortControl={<SortControl sortBy={sortBy} onSortChange={handleSortChange} isSearching />}
+                    pageSizeControl={pageSizeControl}
+                  />
+                ) : (
+                  <SermonList
+                    sermons={paginatedResults}
+                    totalCount={displayResults.length}
+                    sortControl={<SortControl sortBy={sortBy} onSortChange={handleSortChange} />}
+                    pageSizeControl={pageSizeControl}
+                  />
+                )}
+                <Pagination
+                  page={page}
+                  totalPages={totalPages}
+                  onPageChange={setPage}
+                />
+              </div>
+            </div>
           </>
         ) : isSearching ? (
           <>
@@ -827,7 +992,7 @@ function HomeContent() {
                 onDateFromChange={handleDateFromChange}
                 onDateToChange={handleDateToChange}
                 isSearching
-                toolbar={modePills}
+                toolbar={subModePills}
               />
             )}
             <Pagination
@@ -867,7 +1032,7 @@ function HomeContent() {
                 onPassageChange={handlePassageChange}
                 onDateFromChange={handleDateFromChange}
                 onDateToChange={handleDateToChange}
-                toolbar={modePills}
+                toolbar={subModePills}
               />
             )}
             <Pagination
@@ -884,7 +1049,7 @@ function HomeContent() {
           </>
         )}
 
-        {searchMode !== "ai" && (
+        {searchMode !== "ai" && searchMode !== "combined" && (
           <Pagination
             page={page}
             totalPages={totalPages}
