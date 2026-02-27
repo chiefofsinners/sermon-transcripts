@@ -2,7 +2,7 @@
 
 import { Suspense, useState, useEffect, useCallback, useRef, useMemo, useTransition } from "react";
 import { useSearchParams } from "next/navigation";
-import SearchBar from "@/components/SearchBar";
+import SearchBar, { type ComboButton } from "@/components/SearchBar";
 import SermonList from "@/components/SermonList";
 import SearchResultList from "@/components/SearchResultList";
 import AiSearchResult from "@/components/AiSearchResult";
@@ -138,6 +138,7 @@ function HomeContent() {
       return m === "any" || m === "all" || m === "exact" ? m : "all";
     }
   );
+  const [activeComboButton, setActiveComboButton] = useState<ComboButton>("both");
   const viewMode: ViewMode = searchMode === "combined" ? "combined" : searchMode === "ai" ? "ai" : "search";
   // The effective search mode for phrase filtering, snippets, etc.
   const effectiveSearchMode: SearchMode = searchMode === "combined" ? searchSubMode : searchMode;
@@ -420,6 +421,26 @@ function HomeContent() {
     }, 150);
   }, [runSearch]);
 
+  // AI-only submit — stay on combo, only trigger AI
+  const handleAiOnlySubmit = useCallback(() => {
+    if (inputValue.trim()) {
+      setAiQuery(inputValue.trim());
+      setAiSubmitCount((c) => c + 1);
+      logSearch(inputValue.trim(), "ai");
+    }
+  }, [inputValue, logSearch]);
+
+  // Word-search-only submit — stay on combo, only trigger FlexSearch
+  const handleWordSearchSubmit = useCallback(() => {
+    if (inputValue.trim()) {
+      logSearch(inputValue.trim(), "standard");
+      startTransition(() => {
+        runSearch(inputValue.trim(), "combined");
+      });
+    }
+  }, [inputValue, logSearch, runSearch]);
+
+  // Both AI and word search (combined submit / Enter key)
   const handleAiSubmit = useCallback(() => {
     if (inputValue.trim()) {
       setAiQuery(inputValue.trim());
@@ -898,13 +919,18 @@ function HomeContent() {
             value={inputValue}
             onChange={handleSearch}
             onSubmit={searchMode === "ai" || searchMode === "combined" ? handleAiSubmit : undefined}
+            onAiSubmit={searchMode === "combined" ? handleAiOnlySubmit : undefined}
+            onWordSearchSubmit={searchMode === "combined" ? handleWordSearchSubmit : undefined}
             loading={loading}
-            showSend={searchMode === "ai" || searchMode === "combined"}
+            showSend={searchMode === "ai"}
+            showComboButtons={searchMode === "combined"}
+            activeComboButton={activeComboButton}
+            onComboButtonChange={setActiveComboButton}
           />
           <p className="text-center text-xs text-gray-400 dark:text-gray-600 mt-2">
             Please note that searches are logged to improve the quality of results.
           </p>
-          <div className="flex justify-center mt-2 mb-2">{modePills}</div>
+          <div className="hidden sm:flex justify-center mt-2 mb-2">{modePills}</div>
         </div>
 
         {(loading && results.length === 0) ? null : searchMode === "ai" ? (
@@ -923,7 +949,7 @@ function HomeContent() {
 
               {/* Sermon list — right on desktop, below on mobile */}
               <div className="w-full lg:w-1/2 lg:min-w-0">
-                <h2 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-2 text-center">Word Search</h2>
+                <h2 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-2 text-center">Search Results</h2>
                 <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-4">
                 {dynamicFilterOptions && (
                   <SermonFilters
