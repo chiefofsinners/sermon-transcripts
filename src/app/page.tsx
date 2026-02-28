@@ -156,6 +156,7 @@ function HomeContent() {
   const abortRef = useRef<AbortController | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const skipSnippetFetch = useRef(!!cached.current?.query);
+  const scrollTargetOnPageChange = useRef<"top" | "panel" | null>(null);
   const savedScrollY = useRef<number | null>(null);
   if (savedScrollY.current === null && cached.current) {
     try {
@@ -540,8 +541,27 @@ function HomeContent() {
 
   const handlePageChange = useCallback((p: number) => {
     setPage(p);
-    window.scrollTo({ top: 0 });
+    scrollTargetOnPageChange.current = "top";
   }, []);
+
+  const handleCombinedPageChange = useCallback((p: number) => {
+    setPage(p);
+    scrollTargetOnPageChange.current = "panel";
+  }, []);
+
+  // Scroll after React re-renders with new page content – deferring avoids
+  // the browser re-adjusting the scroll position (especially on mobile) when
+  // the DOM updates after a synchronous scrollTo.
+  useEffect(() => {
+    const target = scrollTargetOnPageChange.current;
+    if (!target) return;
+    scrollTargetOnPageChange.current = null;
+    if (target === "panel") {
+      searchPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    } else {
+      window.scrollTo({ top: 0 });
+    }
+  }, [page]);
 
   const handlePageSizeChange = useCallback((v: number) => {
     setPageSize(v);
@@ -1094,8 +1114,7 @@ function HomeContent() {
                 <Pagination
                   page={page}
                   totalPages={totalPages}
-                  onPageChange={setPage}
-                  onAfterChange={() => searchPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })}
+                  onPageChange={handleCombinedPageChange}
                 />
                 </div>
               </div>
