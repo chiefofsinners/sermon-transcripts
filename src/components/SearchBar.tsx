@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useEffect, type KeyboardEvent } from "react";
+import { useRef, useEffect, useCallback, type KeyboardEvent } from "react";
 
 export type ComboButton = "ai" | "word" | "both";
 
@@ -27,11 +27,24 @@ export default function SearchBar({
   activeComboButton?: ComboButton;
   onComboButtonChange?: (button: ComboButton) => void;
 }) {
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  const autoResize = useCallback(() => {
+    const el = inputRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${el.scrollHeight}px`;
+  }, []);
 
   useEffect(() => {
     inputRef.current?.focus();
-  }, []);
+    autoResize();
+  }, [autoResize]);
+
+  // Re-fit height when value changes externally (e.g. clear button)
+  useEffect(() => {
+    autoResize();
+  }, [value, autoResize]);
 
   const hasButtons = showComboButtons;
 
@@ -77,13 +90,16 @@ export default function SearchBar({
   return (
     <div className={`w-full ${showComboButtons ? "max-w-3xl" : "max-w-2xl"} mx-auto`}>
     <div className="relative">
-      <input
+      <textarea
         ref={inputRef}
-        type="text"
+        rows={1}
         value={value}
-        onChange={(e) => onChange(e.target.value)}
-        onKeyDown={(e: KeyboardEvent<HTMLInputElement>) => {
-          if (e.key === "Enter") {
+        onChange={(e) => {
+          onChange(e.target.value);
+          autoResize();
+        }}
+        onKeyDown={(e: KeyboardEvent<HTMLTextAreaElement>) => {
+          if (e.key === "Enter" && !e.shiftKey) {
             e.preventDefault();
             if (showComboButtons && activeComboButton) {
               if (activeComboButton === "ai" && onAiSubmit) onAiSubmit();
@@ -107,15 +123,17 @@ export default function SearchBar({
               // Place cursor between the quotes after React re-renders
               requestAnimationFrame(() => {
                 input.setSelectionRange(pos + 1, pos + 1);
+                autoResize();
               });
             }
           }
         }}
         placeholder={loading ? "Loading search index..." : showSend || showComboButtons ? "Ask a question..." : "Search sermons..."}
         disabled={loading}
-        className={`w-full pl-5 ${hasButtons ? "pr-12 sm:pr-64" : showSend ? "pr-22" : "pr-12"} py-3.5 text-lg border border-gray-300 dark:border-gray-600 ${hasButtons ? "rounded-lg sm:rounded-lg" : "rounded-lg"}
+        className={`w-full pl-5 ${hasButtons ? "pr-12 sm:pr-64" : showSend ? "pr-22" : "pr-12"} py-3.5 text-lg border border-gray-300 dark:border-gray-600 rounded-lg
                    focus:outline-none focus:ring-2 focus:ring-gray-400 dark:focus:ring-gray-500 focus:border-transparent
-                   bg-gray-100 dark:bg-gray-950 text-gray-900 dark:text-gray-100 placeholder-gray-500`}
+                   bg-gray-100 dark:bg-gray-950 text-gray-900 dark:text-gray-100 placeholder-gray-500
+                   resize-none overflow-hidden leading-normal`}
       />
       {/* Desktop: buttons inside the input */}
       <div className={`absolute right-0 top-0 bottom-0 ${hasButtons ? "hidden sm:flex" : "flex"} items-center gap-1.5 pr-3`}>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useCallback, useEffect } from "react";
+import React, { useState, useRef, useCallback, useEffect } from "react";
 import Link from "next/link";
 import ReadingSettingsProvider, { useReadingSettings } from "./ReadingSettingsProvider";
 import ReadingSettingsOverlay from "./ReadingSettingsOverlay";
@@ -528,13 +528,20 @@ function ResponseMarkdown({ text, sources }: { text: string; sources: Source[] }
           return <hr key={i} className="border-gray-200 dark:border-gray-800 my-4" />;
         }
 
-        // Heading (strip leading #s)
-        const headingMatch = trimmed.match(/^(#{1,4})\s+(.+?)$/m);
+        // Heading (strip leading #s) — may have body text after the heading line
+        const headingMatch = trimmed.match(/^(#{1,4})\s+(.+)$/m);
         if (headingMatch && trimmed.startsWith("#")) {
+          const headingText = headingMatch[2];
+          const rest = trimmed.slice(trimmed.indexOf("\n") + 1).trim();
           return (
-            <p key={i} className="font-semibold text-gray-900 dark:text-gray-100 mt-4 mb-1">
-              {processInline(headingMatch[2], sourceByTitle, sourceByNormalized)}
-            </p>
+            <React.Fragment key={i}>
+              <p className="font-semibold text-gray-900 dark:text-gray-100 mt-4 mb-1">
+                {processInline(headingText, sourceByTitle, sourceByNormalized)}
+              </p>
+              {rest && trimmed.includes("\n") && (
+                <p>{processInline(rest.replace(/\n/g, " "), sourceByTitle, sourceByNormalized)}</p>
+              )}
+            </React.Fragment>
           );
         }
 
