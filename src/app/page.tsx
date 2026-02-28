@@ -964,7 +964,7 @@ function HomeContent() {
               {(aiPanelHidden || !searchPanelHidden) && (
               <button
                 onClick={() => aiPanelHidden ? setAiPanelHidden(false) : setSearchPanelHidden(true)}
-                className="flex items-center gap-1 text-sm font-medium text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 cursor-pointer transition-colors"
+                className="flex pl-2 items-center gap-1 text-sm font-medium text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 cursor-pointer transition-colors"
                 title={aiPanelHidden ? "Show AI panel" : "Expand AI panel"}
               >
                 <span>AI</span>
@@ -975,7 +975,7 @@ function HomeContent() {
               {(searchPanelHidden || !aiPanelHidden) && (
               <button
                 onClick={() => searchPanelHidden ? setSearchPanelHidden(false) : setAiPanelHidden(true)}
-                className="flex items-center gap-1 text-sm font-medium text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 cursor-pointer transition-colors ml-auto"
+                className="flex pr-2 items-center gap-1 text-sm font-medium text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 cursor-pointer transition-colors ml-auto"
                 title={searchPanelHidden ? "Show search panel" : "Expand search panel"}
               >
                 <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="17 11 12 6 7 11"/><polyline points="17 18 12 13 7 18"/></svg>
@@ -992,7 +992,7 @@ function HomeContent() {
                   {!searchPanelHidden && (
                   <button
                     onClick={() => setSearchPanelHidden(true)}
-                    className="absolute left-0 flex items-center gap-1.5 text-sm font-medium text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 cursor-pointer transition-colors"
+                    className="absolute left-0 pl-4 flex items-center gap-1.5 text-sm font-medium text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 cursor-pointer transition-colors"
                     title="Expand AI panel"
                   >
                     <span>AI</span>
@@ -1003,7 +1003,7 @@ function HomeContent() {
                   {searchPanelHidden && (
                   <button
                     onClick={() => setSearchPanelHidden(false)}
-                    className="absolute right-0 flex items-center gap-1.5 text-sm font-medium text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 cursor-pointer transition-colors"
+                    className="absolute right-0 pr-4 flex items-center gap-1.5 text-sm font-medium text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 cursor-pointer transition-colors"
                     title="Show search panel"
                   >
                     <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="11 17 6 12 11 7"/><polyline points="18 17 13 12 18 7"/></svg>
@@ -1022,7 +1022,7 @@ function HomeContent() {
                   {aiPanelHidden && (
                   <button
                     onClick={() => setAiPanelHidden(false)}
-                    className="absolute left-0 flex items-center gap-1.5 text-sm font-medium text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 cursor-pointer transition-colors"
+                    className="absolute left-0 pl-4 flex items-center gap-1.5 text-sm font-medium text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 cursor-pointer transition-colors"
                     title="Show AI panel"
                   >
                     <span>AI</span>
@@ -1033,7 +1033,7 @@ function HomeContent() {
                   {!aiPanelHidden && (
                   <button
                     onClick={() => setAiPanelHidden(true)}
-                    className="absolute right-0 flex items-center gap-1.5 text-sm font-medium text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 cursor-pointer transition-colors"
+                    className="absolute right-0 pr-4 flex items-center gap-1.5 text-sm font-medium text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 cursor-pointer transition-colors"
                     title="Expand search panel"
                   >
                     <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="11 17 6 12 11 7"/><polyline points="18 17 13 12 18 7"/></svg>
