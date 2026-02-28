@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useEffect, useCallback, type KeyboardEvent } from "react";
+import { useRef, useState, useEffect, useCallback, type KeyboardEvent } from "react";
 
 export type ComboButton = "ai" | "word" | "both";
 
@@ -28,12 +28,18 @@ export default function SearchBar({
   onComboButtonChange?: (button: ComboButton) => void;
 }) {
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const singleLineHeight = useRef<number>(0);
+  const [multiLine, setMultiLine] = useState(false);
 
   const autoResize = useCallback(() => {
     const el = inputRef.current;
     if (!el) return;
     el.style.height = "auto";
+    if (singleLineHeight.current === 0) {
+      singleLineHeight.current = el.scrollHeight;
+    }
     el.style.height = `${el.scrollHeight}px`;
+    setMultiLine(el.scrollHeight > singleLineHeight.current);
   }, []);
 
   useEffect(() => {
@@ -59,14 +65,14 @@ export default function SearchBar({
           onClick();
         }}
         title={label}
-        className={`px-2.5 py-1.5 text-xs font-medium rounded-md cursor-pointer transition-colors whitespace-nowrap ${
+        className={`px-4 py-2.5 text-sm sm:px-2.5 sm:py-1.5 sm:text-xs font-medium rounded-md cursor-pointer transition-colors whitespace-nowrap ${
           isActive
             ? "bg-gray-700 dark:bg-gray-300 text-white dark:text-gray-900 hover:bg-gray-900 dark:hover:bg-white"
             : "bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600"
         }`}
       >
         <span className="hidden sm:inline">{label}</span>
-        <span className="sm:hidden">{icon}</span>
+        <span className="sm:hidden [&>svg]:w-5 [&>svg]:h-5">{icon}</span>
       </button>
     );
   };
@@ -89,7 +95,7 @@ export default function SearchBar({
 
   return (
     <div className={`w-full ${showComboButtons ? "max-w-3xl" : "max-w-2xl"} mx-auto`}>
-    <div className="relative">
+    <div className={`relative flex ${multiLine ? "items-end" : "items-center"}`}>
       <textarea
         ref={inputRef}
         rows={1}
@@ -136,7 +142,7 @@ export default function SearchBar({
                    resize-none overflow-hidden leading-normal`}
       />
       {/* Desktop: buttons inside the input */}
-      <div className={`absolute right-0 top-0 bottom-0 ${hasButtons ? "hidden sm:flex" : "flex"} items-center gap-1.5 pr-3`}>
+      <div className={`absolute right-0 ${multiLine ? "pb-4" : ""} ${hasButtons ? "hidden sm:flex" : "flex"} items-center gap-1.5 pr-4`}>
         {loading ? (
           <div className="w-5 h-5 border-2 border-gray-500 border-t-transparent rounded-full animate-spin" />
         ) : (
@@ -180,7 +186,7 @@ export default function SearchBar({
       </div>
       {/* Mobile: clear button inside input */}
       {hasButtons && !loading && value && (
-        <div className="absolute right-0 top-0 bottom-0 flex sm:hidden items-center pr-3">
+        <div className="absolute right-0 bottom-0 flex sm:hidden items-center pb-4 pr-3">
           <button
             type="button"
             onClick={() => {
