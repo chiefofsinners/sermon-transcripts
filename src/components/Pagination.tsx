@@ -2,17 +2,24 @@ export default function Pagination({
   page,
   totalPages,
   onPageChange,
+  onAfterChange,
 }: {
   page: number;
   totalPages: number;
   onPageChange: (page: number) => void;
+  onAfterChange?: () => void;
 }) {
   if (totalPages <= 1) return null;
+
+  const change = (p: number) => {
+    onPageChange(p);
+    onAfterChange?.();
+  };
 
   return (
     <div className="flex items-center justify-center gap-2 sm:gap-4 pt-2 sm:pt-4">
       <button
-        onClick={() => onPageChange(1)}
+        onClick={() => change(1)}
         disabled={page <= 1}
         className="px-3 py-2 text-base sm:px-2.5 sm:py-1.5 sm:text-sm font-medium rounded-md border border-gray-300 dark:border-gray-600
                    enabled:hover:bg-gray-300 dark:enabled:hover:bg-gray-800 enabled:cursor-pointer
@@ -24,7 +31,7 @@ export default function Pagination({
         ⟨⟨
       </button>
       <button
-        onClick={() => onPageChange(page - 1)}
+        onClick={() => change(page - 1)}
         disabled={page <= 1}
         className="px-3.5 py-2 text-base sm:px-3 sm:py-1.5 sm:text-sm font-medium rounded-md border border-gray-300 dark:border-gray-600
                    enabled:hover:bg-gray-300 dark:enabled:hover:bg-gray-800 enabled:cursor-pointer
@@ -38,7 +45,7 @@ export default function Pagination({
         Page {page} of {totalPages}
       </span>
       <button
-        onClick={() => onPageChange(page + 1)}
+        onClick={() => change(page + 1)}
         disabled={page >= totalPages}
         className="px-3.5 py-2 text-base sm:px-3 sm:py-1.5 sm:text-sm font-medium rounded-md border border-gray-300 dark:border-gray-600
                    enabled:hover:bg-gray-300 dark:enabled:hover:bg-gray-800 enabled:cursor-pointer
@@ -49,7 +56,7 @@ export default function Pagination({
         <span className="sm:hidden">&rsaquo;</span>
       </button>
       <button
-        onClick={() => onPageChange(totalPages)}
+        onClick={() => change(totalPages)}
         disabled={page >= totalPages}
         className="px-3 py-2 text-base sm:px-2.5 sm:py-1.5 sm:text-sm font-medium rounded-md border border-gray-300 dark:border-gray-600
                    enabled:hover:bg-gray-300 dark:enabled:hover:bg-gray-800 enabled:cursor-pointer

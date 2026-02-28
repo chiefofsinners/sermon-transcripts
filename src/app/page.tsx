@@ -152,6 +152,7 @@ function HomeContent() {
   const effectiveSearchMode: SearchMode = searchMode === "combined" ? searchSubMode : searchMode;
   const [filterOptions, setFilterOptions] = useState<FilterOptions | null>(cachedFilterOptions);
 
+  const searchPanelRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const skipSnippetFetch = useRef(!!cached.current?.query);
@@ -1016,7 +1017,7 @@ function HomeContent() {
               </div>
 
               {/* Sermon list — right on desktop, below on mobile */}
-              <div className={`w-full ${aiPanelHidden ? "flex flex-col" : "lg:w-1/2"} lg:min-w-0`} style={searchPanelHidden ? { display: 'none' } : undefined}>
+              <div ref={searchPanelRef} className={`w-full ${aiPanelHidden ? "flex flex-col" : "lg:w-1/2"} lg:min-w-0`} style={searchPanelHidden ? { display: 'none' } : undefined}>
                 <div className="relative hidden lg:flex items-center justify-center mb-2">
                   {aiPanelHidden && (
                   <button
@@ -1094,6 +1095,7 @@ function HomeContent() {
                   page={page}
                   totalPages={totalPages}
                   onPageChange={setPage}
+                  onAfterChange={() => searchPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })}
                 />
                 </div>
               </div>
