@@ -12,7 +12,7 @@
     "prebuild": "tsx scripts/generate-index.ts",
     "generate-embeddings": "tsx scripts/generate-embeddings.ts",
     "rebuild-embeddings": "tsx scripts/generate-embeddings.ts --rebuild",
-    "pipeline": "npm run download && npm run build"
+    "pipeline": "npm run download && npm run generate-embeddings && npm run build"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^3.0.46",
