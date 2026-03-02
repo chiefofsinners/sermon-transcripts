@@ -82,10 +82,10 @@ function Check() {
 }
 
 const btnClass =
-  "inline-flex items-center gap-2 px-3.5 py-2 text-base sm:px-3 sm:py-1.5 sm:text-sm border border-gray-300 dark:border-gray-600 rounded-md bg-gray-200 dark:bg-gray-950 text-gray-700 dark:text-gray-300 shadow-sm hover:bg-gray-300 dark:hover:bg-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-400 dark:focus:ring-gray-500 focus:border-transparent cursor-pointer";
+  "inline-flex items-center gap-2 px-3.5 py-2 text-base sm:px-3 sm:py-1.5 sm:text-sm border border-gray-300 dark:border-gray-600 rounded-md bg-gray-200 dark:bg-gray-900 text-gray-700 dark:text-gray-300 shadow-sm hover:bg-gray-300 dark:hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-gray-400 dark:focus:ring-gray-500 focus:border-transparent cursor-pointer";
 
 const panelClass =
-  "z-10 mt-1 rounded-md bg-gray-200 dark:bg-gray-950 shadow-lg ring-1 ring-black/5 dark:ring-white/10 focus:outline-none overflow-auto [--anchor-gap:4px] [--anchor-max-height:24rem] [--anchor-padding:16px]";
+  "z-10 mt-1 rounded-md bg-gray-200 dark:bg-gray-900 shadow-lg ring-1 ring-black/5 dark:ring-white/10 focus:outline-none overflow-auto [--anchor-gap:4px] [--anchor-max-height:24rem] [--anchor-padding:16px]";
 
 const optionClass =
   "flex items-center justify-between gap-2 px-3 py-2.5 text-base sm:py-2 sm:text-sm text-gray-700 dark:text-gray-300 cursor-pointer select-none data-[focus]:bg-gray-100 dark:data-[focus]:bg-gray-900 data-[focus]:text-gray-900 dark:data-[focus]:text-gray-100 data-[selected]:font-medium";
