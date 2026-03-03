@@ -6,10 +6,16 @@ import { AI_SYSTEM_PROMPT } from "@/lib/siteConfig";
 
 export type AiProvider = "anthropic" | "openai" | "xai";
 
+const PROVIDER_MODEL_IDS: Record<AiProvider, string> = {
+  anthropic: process.env.AI_SEARCH_MODEL_ANTHROPIC || "claude-haiku-4-5",
+  openai: process.env.AI_SEARCH_MODEL_OPENAI || "gpt-5.2",
+  xai: process.env.AI_SEARCH_MODEL_XAI || "grok-4-fast-non-reasoning",
+};
+
 const PROVIDER_MODELS: Record<AiProvider, () => ReturnType<typeof anthropic>> = {
-  anthropic: () => anthropic(process.env.AI_SEARCH_MODEL_ANTHROPIC || "claude-haiku-4-5"),
-  openai: () => openaiProvider(process.env.AI_SEARCH_MODEL_OPENAI || "gpt-5.2"),
-  xai: () => xai(process.env.AI_SEARCH_MODEL_XAI || "grok-4-fast-non-reasoning"),
+  anthropic: () => anthropic(PROVIDER_MODEL_IDS.anthropic),
+  openai: () => openaiProvider(PROVIDER_MODEL_IDS.openai),
+  xai: () => xai(PROVIDER_MODEL_IDS.xai),
 };
 
 interface Source {
@@ -38,6 +44,9 @@ export async function POST(request: Request) {
       headers: { "Content-Type": "application/json" },
     });
   }
+
+  const modelId = PROVIDER_MODEL_IDS[provider];
+  console.log(`[ai-agent] ${new Date().toISOString()} | provider=${provider} | model=${modelId} | q="${query}"`);
 
   const sourcesHeader = encodeURIComponent(JSON.stringify(sources ?? []));
 
