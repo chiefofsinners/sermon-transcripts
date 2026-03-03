@@ -5,10 +5,11 @@ import Link from "next/link";
 import ReadingSettingsProvider, { useReadingSettings } from "./ReadingSettingsProvider";
 import ReadingSettingsOverlay from "./ReadingSettingsOverlay";
 
-type AiProvider = "anthropic" | "openai" | "xai";
+type AiProvider = "anthropic" | "deepseek" | "openai" | "xai";
 
 const AI_PROVIDERS: { value: AiProvider; label: string }[] = [
   { value: "anthropic", label: "Claude" },
+  { value: "deepseek", label: "DeepSeek" },
   { value: "openai", label: "GPT" },
   { value: "xai", label: "Grok" },
 ];
@@ -223,7 +224,7 @@ function AiSearchResultInner({ query, submitCount }: { query: string; submitCoun
       .replace(/\n*---\s*$/, "")
       .trim();
     if (!finalResponse) {
-      const providerName = { anthropic: "Claude", openai: "GPT", xai: "Grok" }[providerRef.current] || "The model";
+      const providerName = { anthropic: "Claude", deepseek: "DeepSeek", openai: "GPT", xai: "Grok" }[providerRef.current] || "The model";
       throw new Error(
         streamError
           ? `${providerName} encountered an error: ${streamError}`
