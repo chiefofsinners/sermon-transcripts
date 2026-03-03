@@ -352,9 +352,9 @@ function AiSearchResultInner({ query, submitCount }: { query: string; submitCoun
   }, [response]);
 
   const providerPills = (
-    <div className="flex items-center justify-between font-sans" style={{ fontFamily: "var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif" }}>
-      <div className="flex gap-1 items-center">
-        <span className="text-xs text-gray-400 dark:text-gray-500 mr-1">Model:</span>
+    <div className="flex items-start justify-between font-sans" style={{ fontFamily: "var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif" }}>
+      <div className="flex flex-wrap gap-1 items-center min-w-0">
+        <span className="text-xs text-gray-400 dark:text-gray-500 mr-1 shrink-0">Model:</span>
         {AI_PROVIDERS.map((p) => (
           <button
             key={p.value}
@@ -370,7 +370,7 @@ function AiSearchResultInner({ query, submitCount }: { query: string; submitCoun
           </button>
         ))}
       </div>
-      <div className="flex items-center gap-1">
+      <div className="flex items-center gap-1 shrink-0">
         {response && (
           <button
             type="button"
