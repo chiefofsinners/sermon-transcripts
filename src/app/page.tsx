@@ -378,10 +378,9 @@ function HomeContent() {
     if (q.trim() === "") {
       setResults(getAllSermons());
     } else {
-      logSearch(q, "standard", mode);
       setResults(mode === "any" ? searchAny(q) : mode === "exact" ? search(stripQuotes(q)) : searchAll(stripQuotes(q)));
     }
-  }, [logSearch]);
+  }, []);
 
   const handleSearch = useCallback((q: string) => {
     // Update input immediately so typing is never laggy
@@ -409,7 +408,7 @@ function HomeContent() {
   // Word-search-only submit — stay on combo, only trigger FlexSearch
   const handleWordSearchSubmit = useCallback(() => {
     if (inputValue.trim()) {
-      logSearch(inputValue.trim(), "standard");
+      logSearch(inputValue.trim(), "word-search");
       setSearchPanelHidden(false);
       startTransition(() => {
         runSearch(inputValue.trim());
@@ -421,6 +420,7 @@ function HomeContent() {
   const handleAiSubmit = useCallback(() => {
     if (inputValue.trim()) {
       const q = inputValue.trim();
+      logSearch(q, "both");
       // Always bump submitCount if the AI panel was hidden (component remounts
       // with current count, so it needs a fresh bump to detect the change)
       const wasAiHidden = aiPanelHiddenRef.current;
@@ -428,7 +428,6 @@ function HomeContent() {
       if (q !== aiQueryRef.current || wasAiHidden) {
         setAiQuery(q);
         setAiSubmitCount((c) => c + 1);
-        if (q !== aiQueryRef.current) logSearch(q, "ai");
       }
       // Also trigger FlexSearch
       setAiPanelHidden(false);
