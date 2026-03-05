@@ -884,7 +884,7 @@ function HomeContent() {
             </div>
 
             {/* Side-by-side on desktop, stacked on mobile */}
-            <div className={`flex flex-col lg:flex-row lg:items-stretch gap-6 ${(aiPanelHidden || searchPanelHidden) ? "flex-1" : ""}`}>
+            <div className={`flex flex-col lg:flex-row lg:items-start gap-6 ${(aiPanelHidden || searchPanelHidden) ? "flex-1" : ""}`}>
               {/* AI panel — left on desktop, top on mobile */}
               <div className={`w-full flex flex-col ${searchPanelHidden ? "" : "lg:w-1/2"} lg:min-w-0`} style={aiPanelHidden ? { display: 'none' } : undefined}>
                 <div className="relative hidden lg:flex items-center justify-center mb-2">
