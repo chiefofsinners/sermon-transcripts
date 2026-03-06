@@ -424,10 +424,11 @@ function AiSearchResultInner({ query, submitCount }: { query: string; submitCoun
       <div className="mb-4">{providerPills}</div>
       {/* Loading indicator */}
       {loading && (
-        <div className="flex items-center gap-2 mb-4 text-gray-500 dark:text-gray-400">
+        <div className="flex items-center gap-2 mb-4 text-gray-500 dark:text-gray-400" style={{ fontSize: fontSizeMap[fontSize], fontFamily: fontFamilyMap[fontFamily] }}>
           <svg
-            className="animate-spin"
-            style={{ width: fontSizeMap[fontSize], height: fontSizeMap[fontSize] }}
+            className="animate-spin shrink-0"
+            width="1em"
+            height="1em"
             xmlns="http://www.w3.org/2000/svg"
             fill="none"
             viewBox="0 0 24 24"
@@ -446,7 +447,7 @@ function AiSearchResultInner({ query, submitCount }: { query: string; submitCoun
               d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
             />
           </svg>
-          <span style={{ fontSize: fontSizeMap[fontSize], fontFamily: fontFamilyMap[fontFamily] }}>Searching sermons and generating answer...</span>
+          <span>Searching sermons and generating answer...</span>
         </div>
       )}
 
