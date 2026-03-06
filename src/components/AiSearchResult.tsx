@@ -474,19 +474,20 @@ function AiSearchResultInner({ query, submitCount }: { query: string; submitCoun
       {sources.length > 0 && !loading && (
         <div className="border-t border-gray-200 dark:border-gray-800 pt-4 mt-6 font-sans" style={{ fontFamily: "var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif" }}>
           <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
-            Sources ({sources.length} sermons)
+            References ({sources.length} sermons)
           </h3>
-          <ul className="space-y-2">
-            {sources.map((s) => (
-              <li key={s.sermonID}>
+          <ul className="columns-1 md:columns-2 xl:columns-3 gap-4" style={{ listStyle: "none", padding: 0, margin: 0 }}>
+            {sources.map((s, idx) => (
+              <li key={s.sermonID} className="break-inside-avoid mb-2">
                 <Link
                   href={`/sermon/${s.sermonID}`}
-                  className="block rounded-lg border border-gray-200 dark:border-gray-800 p-3 hover:bg-gray-100 dark:hover:bg-gray-800/50 transition-colors"
+                  className="block rounded-lg border border-gray-200 dark:border-gray-800 p-3 hover:bg-gray-100 dark:hover:bg-gray-800/50 hover:border-gray-400 dark:hover:border-gray-600 transition-colors"
                 >
                   <span className="font-medium text-gray-900 dark:text-gray-100 text-sm">
+                    <span className="text-gray-400 dark:text-gray-500 mr-1.5">[{idx + 1}]</span>
                     {s.title}
                   </span>
-                  <span className="block text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                  <span className="block text-xs text-gray-500 dark:text-gray-400 mt-0.5 ml-6">
                     {s.preacher}
                     {s.bibleText && ` · ${s.bibleText}`}
                     {s.preachDate && ` · ${formatDate(s.preachDate)}`}
@@ -511,9 +512,12 @@ function ResponseMarkdown({ text, sources }: { text: string; sources: Source[] }
   // Build lookups by title for citation linking
   const sourceByTitle = new Map<string, Source>();
   const sourceByNormalized = new Map<string, Source>();
-  for (const s of sources) {
+  const sourceIndex = new Map<string, number>();
+  for (let i = 0; i < sources.length; i++) {
+    const s = sources[i];
     sourceByTitle.set(s.title.toLowerCase(), s);
     sourceByNormalized.set(normalizeTitle(s.title), s);
+    sourceIndex.set(s.sermonID, i + 1);
   }
 
   const paragraphs = text.split(/\n\n+/);
@@ -537,10 +541,10 @@ function ResponseMarkdown({ text, sources }: { text: string; sources: Source[] }
           return (
             <React.Fragment key={i}>
               <p className="font-semibold text-gray-900 dark:text-gray-100 mt-4 mb-1">
-                {processInline(headingText, sourceByTitle, sourceByNormalized)}
+                {processInline(headingText, sourceByTitle, sourceByNormalized, sourceIndex)}
               </p>
               {rest && trimmed.includes("\n") && (
-                <p>{processInline(rest.replace(/\n/g, " "), sourceByTitle, sourceByNormalized)}</p>
+                <p>{processInline(rest.replace(/\n/g, " "), sourceByTitle, sourceByNormalized, sourceIndex)}</p>
               )}
             </React.Fragment>
           );
@@ -552,13 +556,13 @@ function ResponseMarkdown({ text, sources }: { text: string; sources: Source[] }
           return (
             <ul key={i}>
               {items.map((item, j) => (
-                <li key={j}>{processInline(item.replace(/^[-*] /, ""), sourceByTitle, sourceByNormalized)}</li>
+                <li key={j}>{processInline(item.replace(/^[-*] /, ""), sourceByTitle, sourceByNormalized, sourceIndex)}</li>
               ))}
             </ul>
           );
         }
 
-        return <p key={i}>{processInline(trimmed.replace(/\n/g, " "), sourceByTitle, sourceByNormalized)}</p>;
+        return <p key={i}>{processInline(trimmed.replace(/\n/g, " "), sourceByTitle, sourceByNormalized, sourceIndex)}</p>;
       })}
     </>
   );
@@ -589,7 +593,8 @@ function findSource(title: string, sourceByTitle: Map<string, Source>, sourceByN
 function processInline(
   text: string,
   sourceByTitle: Map<string, Source>,
-  sourceByNormalized: Map<string, Source>
+  sourceByNormalized: Map<string, Source>,
+  sourceIndex: Map<string, number>
 ): React.ReactNode {
   // Match [Sermon Title, Preacher] citation patterns, **bold**, and *italic*
   const parts: React.ReactNode[] = [];
@@ -606,38 +611,40 @@ function processInline(
 
     if (match[3] !== undefined) {
       // Bold — recurse so citations inside bold are still linked
-      parts.push(<strong key={key++}>{processInline(match[3], sourceByTitle, sourceByNormalized)}</strong>);
+      parts.push(<strong key={key++}>{processInline(match[3], sourceByTitle, sourceByNormalized, sourceIndex)}</strong>);
     } else if (match[4] !== undefined) {
       // Italic — recurse so citations inside italic are still linked
-      parts.push(<em key={key++}>{processInline(match[4], sourceByTitle, sourceByNormalized)}</em>);
+      parts.push(<em key={key++}>{processInline(match[4], sourceByTitle, sourceByNormalized, sourceIndex)}</em>);
     } else {
       // Citation — may contain multiple semicolon-separated citations
       const fullText = match[1] + ", " + match[2];
       const citations = fullText.split(/;\s*/);
       citations.forEach((cite, ci) => {
-        if (ci > 0) parts.push("; ");
+        if (ci > 0) parts.push(" ");
         const commaIdx = cite.lastIndexOf(",");
         if (commaIdx === -1) {
           parts.push(cite.trim());
           return;
         }
         const title = cite.slice(0, commaIdx).trim();
-        const preacher = cite.slice(commaIdx + 1).trim();
         const source = findSource(title, sourceByTitle, sourceByNormalized);
         if (source) {
+          const num = sourceIndex.get(source.sermonID) ?? "?";
           parts.push(
             <Link
               key={key++}
               href={`/sermon/${source.sermonID}`}
-              className="text-gray-700 dark:text-gray-300 underline decoration-gray-400 dark:decoration-gray-500 hover:text-gray-900 dark:hover:text-gray-100"
+              className="inline-flex items-center justify-center text-xs font-medium text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 hover:bg-gray-200 dark:hover:bg-gray-700 rounded px-1 py-0.5 min-w-[1.25rem] transition-colors no-underline align-super"
+              title={`${source.title} — ${source.preacher}`}
+              style={{ fontSize: "0.7em", lineHeight: 1, verticalAlign: "super" }}
             >
-              {title}, {preacher}
+              [{num}]
             </Link>
           );
         } else {
           parts.push(
-            <span key={key++} className="text-gray-700 dark:text-gray-300 underline decoration-gray-400 dark:decoration-gray-500">
-              [{title}, {preacher}]
+            <span key={key++} className="text-xs text-gray-400 dark:text-gray-500" style={{ fontSize: "0.7em", verticalAlign: "super" }}>
+              [?]
             </span>
           );
         }
