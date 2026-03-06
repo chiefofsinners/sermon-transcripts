@@ -472,22 +472,22 @@ function AiSearchResultInner({ query, submitCount }: { query: string; submitCoun
 
       {/* Sources list */}
       {sources.length > 0 && !loading && (
-        <div className="border-t border-gray-200 dark:border-gray-800 pt-4 mt-6 font-sans" style={{ fontFamily: "var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif" }}>
+        <div className="@container border-t border-gray-200 dark:border-gray-800 pt-4 mt-6 font-sans text-base" style={{ fontFamily: "var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif" }}>
           <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
             References ({sources.length} sermons)
           </h3>
-          <ul className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2" style={{ listStyle: "none", padding: 0, margin: 0 }}>
+          <ul className="columns-1 @md:columns-2 @3xl:columns-3 gap-3 list-none p-0 m-0">
             {sources.map((s, idx) => (
-              <li key={s.sermonID}>
+              <li key={s.sermonID} className="break-inside-avoid mb-4 p-0">
                 <Link
                   href={`/sermon/${s.sermonID}`}
-                  className="block rounded-lg border border-gray-200 dark:border-gray-800 px-3 pb-5 hover:bg-gray-200 dark:hover:bg-gray-700/50 hover:border-gray-400 dark:hover:border-gray-600 transition-colors no-underline"
+                  className="block rounded-lg border border-gray-200 dark:border-gray-700 px-2.5 pt-3 pb-4 leading-tight hover:bg-gray-200 dark:hover:bg-gray-700/50 hover:border-gray-400 dark:hover:border-gray-500 transition-colors no-underline"
                 >
-                  <span className="font-medium text-gray-900 dark:text-gray-100 text-sm">
-                    <span className="text-gray-400 dark:text-gray-500 mr-1.5">[{idx + 1}]</span>
+                  <span className="font-medium text-gray-900 dark:text-gray-100 text-sm/tight">
+                    <span className="text-gray-400 dark:text-gray-500 mr-1">[{idx + 1}]</span>
                     {s.title}
                   </span>
-                  <span className="block text-xs text-gray-500 dark:text-gray-400 mt-0.5 ml-6">
+                  <span className="block text-xs text-gray-500 dark:text-gray-400 mt-1.5 pl-5">
                     {s.preacher}
                     {s.bibleText && ` · ${s.bibleText}`}
                     {s.preachDate && ` · ${formatDate(s.preachDate)}`}
