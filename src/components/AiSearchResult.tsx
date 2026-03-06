@@ -477,9 +477,9 @@ function AiSearchResultInner({ query, submitCount }: { query: string; submitCoun
           <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
             References ({sources.length} sermons)
           </h3>
-          <ul className="columns-1 @md:columns-2 @3xl:columns-3 gap-3 list-none p-0 m-0">
+          <ul className="grid grid-cols-1 @md:grid-cols-2 @3xl:grid-cols-3 gap-3 items-start list-none p-0 m-0">
             {sources.map((s, idx) => (
-              <li key={s.sermonID} className="break-inside-avoid mb-4 p-0">
+              <li key={s.sermonID} className="p-0">
                 <Link
                   href={`/sermon/${s.sermonID}`}
                   className="block rounded-lg border border-gray-200 dark:border-gray-700 px-2.5 pt-3 pb-4 leading-tight hover:bg-gray-200 dark:hover:bg-gray-700/50 hover:border-gray-400 dark:hover:border-gray-500 transition-colors no-underline"
@@ -628,6 +628,7 @@ function processInline(
           return;
         }
         const title = cite.slice(0, commaIdx).trim();
+        const preacher = cite.slice(commaIdx + 1).trim();
         const source = findSource(title, sourceByTitle, sourceByNormalized);
         if (source) {
           const num = sourceIndex.get(source.sermonID) ?? "?";
@@ -635,17 +636,23 @@ function processInline(
             <Link
               key={key++}
               href={`/sermon/${source.sermonID}`}
-              className="inline-flex items-center justify-center text-xs font-medium text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 hover:bg-gray-200 dark:hover:bg-gray-700 rounded px-1 py-0.5 min-w-[1.25rem] transition-colors no-underline align-super"
+              className="text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 transition-colors no-underline"
               title={`${source.title} — ${source.preacher}`}
-              style={{ fontSize: "0.7em", lineHeight: 1, verticalAlign: "super" }}
             >
-              [{num}]
+              <span className="italic">{source.title}, {preacher}</span>
+              <span
+                className="inline-flex items-center justify-center text-xs font-medium hover:bg-gray-200 dark:hover:bg-gray-700 rounded px-1 py-0.5 min-w-[1.25rem] align-super"
+                style={{ fontSize: "0.7em", lineHeight: 1, verticalAlign: "super" }}
+              >
+                [{num}]
+              </span>
             </Link>
           );
         } else {
           parts.push(
-            <span key={key++} className="text-xs text-gray-400 dark:text-gray-500" style={{ fontSize: "0.7em", verticalAlign: "super" }}>
-              [?]
+            <span key={key++} className="italic text-gray-400 dark:text-gray-500">
+              {title}, {preacher}
+              <span style={{ fontSize: "0.7em", verticalAlign: "super" }}> [?]</span>
             </span>
           );
         }
