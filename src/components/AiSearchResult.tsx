@@ -641,7 +641,7 @@ function processInline(
             >
               <span className="italic">{source.title}, {preacher}</span>
               <span
-                className="inline-flex items-center justify-center text-xs font-medium hover:bg-gray-200 dark:hover:bg-gray-700 rounded px-1 py-0.5 min-w-[1.25rem] align-super"
+                className="inline-flex items-center justify-center text-xs font-medium hover:bg-gray-200 dark:hover:bg-gray-700 rounded px-1 py-0.5 min-w-5 align-super"
                 style={{ fontSize: "0.7em", lineHeight: 1, verticalAlign: "super" }}
               >
                 [{num}]
