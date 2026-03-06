@@ -27,9 +27,9 @@ const STORAGE_KEY = "reading-settings";
 
 const fontSizeMap: Record<FontSize, string> = {
   small: "0.9rem",
-  medium: "1rem",
-  large: "1.2rem",
-  xlarge: "1.4rem",
+  medium: "1.15rem",
+  large: "1.45rem",
+  xlarge: "1.8rem",
 };
 
 const fontFamilyMap: Record<FontFamily, string> = {

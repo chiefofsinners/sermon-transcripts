@@ -93,7 +93,7 @@ export default function AiSearchResult({ query, submitCount }: { query: string; 
   );
 }
 
-const fontSizeMap = { small: "0.9rem", medium: "1rem", large: "1.2rem", xlarge: "1.4rem" } as const;
+const fontSizeMap = { small: "0.9rem", medium: "1.15rem", large: "1.45rem", xlarge: "1.8rem" } as const;
 const fontFamilyMap = {
   sans: "var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif",
   serif: 'Georgia, Cambria, "Times New Roman", Times, serif',
@@ -481,7 +481,7 @@ function AiSearchResultInner({ query, submitCount }: { query: string; submitCoun
               <li key={s.sermonID}>
                 <Link
                   href={`/sermon/${s.sermonID}`}
-                  className="block rounded-lg border border-gray-200 dark:border-gray-800 px-3 pt-1 pb-5 hover:bg-gray-200 dark:hover:bg-gray-700/50 hover:border-gray-400 dark:hover:border-gray-600 transition-colors no-underline"
+                  className="block rounded-lg border border-gray-200 dark:border-gray-800 px-3 pb-5 hover:bg-gray-200 dark:hover:bg-gray-700/50 hover:border-gray-400 dark:hover:border-gray-600 transition-colors no-underline"
                 >
                   <span className="font-medium text-gray-900 dark:text-gray-100 text-sm">
                     <span className="text-gray-400 dark:text-gray-500 mr-1.5">[{idx + 1}]</span>
