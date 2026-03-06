@@ -476,12 +476,12 @@ function AiSearchResultInner({ query, submitCount }: { query: string; submitCoun
           <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
             References ({sources.length} sermons)
           </h3>
-          <ul className="columns-1 md:columns-2 xl:columns-3 gap-4" style={{ listStyle: "none", padding: 0, margin: 0 }}>
+          <ul className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2" style={{ listStyle: "none", padding: 0, margin: 0 }}>
             {sources.map((s, idx) => (
-              <li key={s.sermonID} className="break-inside-avoid mb-2">
+              <li key={s.sermonID}>
                 <Link
                   href={`/sermon/${s.sermonID}`}
-                  className="block rounded-lg border border-gray-200 dark:border-gray-800 p-3 hover:bg-gray-100 dark:hover:bg-gray-800/50 hover:border-gray-400 dark:hover:border-gray-600 transition-colors"
+                  className="block rounded-lg border border-gray-200 dark:border-gray-800 px-3 pt-1 pb-5 hover:bg-gray-200 dark:hover:bg-gray-700/50 hover:border-gray-400 dark:hover:border-gray-600 transition-colors no-underline"
                 >
                   <span className="font-medium text-gray-900 dark:text-gray-100 text-sm">
                     <span className="text-gray-400 dark:text-gray-500 mr-1.5">[{idx + 1}]</span>
