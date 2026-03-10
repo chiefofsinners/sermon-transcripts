@@ -1,13 +1,63 @@
 import { readFileSync, readdirSync } from "fs";
 import { join } from "path";
 import { notFound } from "next/navigation";
+import type { Metadata } from "next";
 import BackToSearch from "@/components/BackToSearch";
 import HighlightText from "@/components/HighlightText";
 import ReadingSettingsProvider from "@/components/ReadingSettingsProvider";
 import SermonHeader from "@/components/SermonHeader";
 import type { SermonData } from "@/lib/types";
+import { SITE_TITLE, CHURCH_NAME } from "@/lib/siteConfig";
 
 const DATA_DIR = join(process.cwd(), "data", "sermons");
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
+
+function loadSermon(id: string): SermonData | null {
+  try {
+    const raw = readFileSync(join(DATA_DIR, `${id}.json`), "utf-8");
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}): Promise<Metadata> {
+  const { id } = await params;
+  const sermon = loadSermon(id);
+  if (!sermon) return {};
+
+  const title = sermon.title || sermon.displayTitle;
+  const description = [
+    sermon.bibleText && `Passage: ${sermon.bibleText}.`,
+    `Preached by ${sermon.preacher}`,
+    sermon.preachDate &&
+      `on ${new Date(sermon.preachDate).toLocaleDateString("en-GB", {
+        day: "numeric",
+        month: "long",
+        year: "numeric",
+      })}`,
+    sermon.moreInfoText &&
+      `— ${sermon.moreInfoText.slice(0, 200)}${sermon.moreInfoText.length > 200 ? "…" : ""}`,
+  ]
+    .filter(Boolean)
+    .join(" ");
+
+  return {
+    title: `${title} — ${SITE_TITLE}`,
+    description,
+    openGraph: {
+      title,
+      description,
+      type: "article",
+      ...(sermon.preachDate && { publishedTime: sermon.preachDate }),
+      authors: [sermon.preacher],
+    },
+  };
+}
 
 function formatDate(dateStr: string | null): string {
   if (!dateStr) return "";
@@ -34,13 +84,8 @@ export default async function SermonPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  let sermon: SermonData;
-  try {
-    const raw = readFileSync(join(DATA_DIR, `${id}.json`), "utf-8");
-    sermon = JSON.parse(raw);
-  } catch {
-    notFound();
-  }
+  const sermon = loadSermon(id);
+  if (!sermon) notFound();
 
   const title = sermon.title || sermon.displayTitle;
 
@@ -50,8 +95,51 @@ export default async function SermonPage({
       ? `https://www.sermonaudio.com/sermoninfo.asp?SID=${sermon.sermonID}`
       : undefined;
 
+  const jsonLd = {
+    "@context": "https://schema.org",
+    "@type": "Article",
+    headline: title,
+    ...(sermon.subtitle && { alternativeHeadline: sermon.subtitle }),
+    author: {
+      "@type": "Person",
+      name: sermon.preacher,
+    },
+    publisher: {
+      "@type": "Organization",
+      name: CHURCH_NAME,
+    },
+    ...(sermon.preachDate && { datePublished: sermon.preachDate }),
+    ...(sermon.bibleText && {
+      about: {
+        "@type": "Thing",
+        name: sermon.bibleText,
+      },
+    }),
+    ...(sermon.keywords && {
+      keywords: sermon.keywords.split(/\s+/).join(", "),
+    }),
+    ...(sermon.moreInfoText && { description: sermon.moreInfoText }),
+    url: `${SITE_URL}/sermon/${sermon.sermonID}`,
+    isPartOf: {
+      "@type": "WebSite",
+      name: SITE_TITLE,
+      url: SITE_URL,
+    },
+    ...(listenUrl && {
+      associatedMedia: {
+        "@type": "AudioObject",
+        contentUrl: listenUrl,
+        name: `${title} (Audio)`,
+      },
+    }),
+  };
+
   return (
     <main className="min-h-screen bg-gray-50 dark:bg-gray-950">
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+      />
       <ReadingSettingsProvider>
         <SermonHeader title={title} listenUrl={listenUrl} />
         <BackToSearch sermonId={id} />
