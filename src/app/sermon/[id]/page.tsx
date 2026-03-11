@@ -108,7 +108,7 @@ export default async function SermonPage({
       "@type": "Organization",
       name: CHURCH_NAME,
     },
-    ...(sermon.preachDate && { datePublished: sermon.preachDate }),
+    ...(sermon.preachDate && { datePublished: `${sermon.preachDate}T00:00:00Z` }),
     ...(sermon.bibleText && {
       about: {
         "@type": "Thing",
