@@ -52,11 +52,13 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className="min-h-full bg-gray-50 dark:bg-gray-950" style={{ colorScheme: "light dark" }}>
-      <body className={`${geistSans.variable} font-sans antialiased min-h-dvh bg-gray-50 dark:bg-gray-950`}>
+      <head>
         <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: JSON.stringify(websiteJsonLd) }}
         />
+      </head>
+      <body className={`${geistSans.variable} font-sans antialiased min-h-dvh bg-gray-50 dark:bg-gray-950`}>
         {children}
       </body>
     </html>
