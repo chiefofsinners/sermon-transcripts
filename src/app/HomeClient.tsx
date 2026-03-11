@@ -1,0 +1,1029 @@
+"use client";
+
+import { Suspense, useState, useEffect, useCallback, useRef, useMemo, useTransition } from "react";
+import { useSearchParams } from "next/navigation";
+import SearchBar, { type ComboButton } from "@/components/SearchBar";
+import SermonList from "@/components/SermonList";
+import SearchResultList from "@/components/SearchResultList";
+import AiSearchResult from "@/components/AiSearchResult";
+import SermonFilters, { SortControl } from "@/components/SermonFilters";
+import type { SortBy, FilterOptions } from "@/components/SermonFilters";
+import Pagination from "@/components/Pagination";
+import { loadSearchIndex, search, searchAny, searchAll, getAllSermons, isLoaded } from "@/lib/search";
+import { parseQuery, stripQuotes } from "@/lib/parseQuery";
+import { buildBibleIndex, matchesPassageFilter, parsePassageFilter } from "@/lib/bible";
+import type { SermonMeta, SermonSnippet, SearchMode } from "@/lib/types";
+
+const SEARCH_MODES: { value: SearchMode; label: string; shortLabel: string }[] = [
+  { value: "any", label: "Any word", shortLabel: "Any" },
+  { value: "all", label: "All words", shortLabel: "All" },
+  { value: "exact", label: "Exact phrase", shortLabel: "Exact" },
+];
+
+const PAGE_SIZES = [10, 25, 50, 100] as const;
+const DEFAULT_PAGE_SIZE = 10;
+const CACHE_KEY = "sermon-search-state";
+const SCROLL_KEY = "sermon-scroll-y";
+const NAV_LIST_KEY = "sermon-nav-list";
+
+// Module-level cache for filter options (persists across client-side navigations)
+let cachedFilterOptions: FilterOptions | null = null;
+
+interface CachedState {
+  query: string;
+  page: number;
+  results: SermonMeta[];
+  snippets: Record<string, SermonSnippet[]>;
+  sortBy?: SortBy;
+  pageSize?: number;
+  searchMode?: SearchMode;
+  aiQuery?: string;
+  filterPreacher?: string;
+  filterSeries?: string;
+  filterKeyword?: string;
+  filterPassage?: string;
+  filterDateFrom?: string;
+  filterDateTo?: string;
+  aiPanelHidden?: boolean;
+  searchPanelHidden?: boolean;
+}
+
+function readCache(query: string, page: number): CachedState | null {
+  try {
+    const raw = sessionStorage.getItem(CACHE_KEY);
+    if (!raw) return null;
+    const cached: CachedState = JSON.parse(raw);
+    if (cached.query === query && cached.page === page) {
+      // For search mode, require results; for browse mode, filters alone are enough
+      if (cached.query || cached.sortBy || cached.filterPreacher || cached.filterSeries || cached.filterPassage) {
+        return cached;
+      }
+    }
+    // If URL params don't match but we have a cached AI query, still restore
+    // (combined mode may have query in cache but not in URL on first load)
+    if (cached.aiQuery && cached.results?.length) {
+      return cached;
+    }
+  } catch {}
+  return null;
+}
+
+function HomeContent() {
+  const searchParams = useSearchParams();
+  const initialQuery = searchParams.get("q") || "";
+  const initialPage = Number(searchParams.get("page")) || 1;
+  const initialSort = (searchParams.get("sort") as SortBy) || (initialQuery.trim() ? "best-match" : "date-desc");
+  const initialPreacher = searchParams.get("preacher") || "";
+  const initialSeries = searchParams.get("series") || "";
+  const initialKeyword = searchParams.get("keyword") || "";
+  const initialPassage = searchParams.get("passage") || "";
+  const initialDateFrom = searchParams.get("dateFrom") || "";
+  const initialDateTo = searchParams.get("dateTo") || "";
+  const initialPageSize = Number(searchParams.get("pageSize")) || DEFAULT_PAGE_SIZE;
+
+  // Try to restore from sessionStorage on mount
+  const cached = useRef(readCache(initialQuery, initialPage));
+
+  // If the search index is still in memory from a previous mount, skip loading entirely
+  const alreadyLoaded = isLoaded() && cachedFilterOptions !== null;
+
+  const [query, setQuery] = useState(cached.current?.query ?? initialQuery);
+  const [inputValue, setInputValue] = useState(query);
+  const [aiQuery, setAiQuery] = useState(cached.current?.aiQuery ?? initialQuery);
+  const aiQueryRef = useRef(cached.current?.aiQuery ?? "");
+  aiQueryRef.current = aiQuery;
+  const [aiSubmitCount, setAiSubmitCount] = useState(cached.current?.aiQuery ? 1 : 0);
+  const [, startTransition] = useTransition();
+  const [results, setResults] = useState<SermonMeta[]>(() => {
+    if (cached.current?.results?.length) return cached.current.results;
+    if (alreadyLoaded) {
+      if (!initialQuery.trim()) return getAllSermons();
+      const stripped = stripQuotes(initialQuery);
+      return searchAll(stripped);
+    }
+    return [];
+  });
+  const [loading, setLoading] = useState(
+    !alreadyLoaded && !(cached.current && cached.current.results.length > 0)
+  );
+  const [snippets, setSnippets] = useState<Record<string, SermonSnippet[]>>(
+    cached.current?.snippets ?? {}
+  );
+  const [snippetsLoading, setSnippetsLoading] = useState(false);
+  const [restoring, setRestoring] = useState(!!cached.current?.query);
+  const [page, setPage] = useState(cached.current?.page ?? initialPage);
+  const [sortBy, setSortBy] = useState<SortBy>(cached.current?.sortBy ?? initialSort);
+  const [filterPreacher, setFilterPreacher] = useState(cached.current?.filterPreacher ?? initialPreacher);
+  const [filterSeries, setFilterSeries] = useState(cached.current?.filterSeries ?? initialSeries);
+  const [filterKeyword, setFilterKeyword] = useState(cached.current?.filterKeyword ?? initialKeyword);
+  const [filterPassage, setFilterPassage] = useState(cached.current?.filterPassage ?? initialPassage);
+  const [filterDateFrom, setFilterDateFrom] = useState(cached.current?.filterDateFrom ?? initialDateFrom);
+  const [filterDateTo, setFilterDateTo] = useState(cached.current?.filterDateTo ?? initialDateTo);
+  const [pageSize, setPageSize] = useState(cached.current?.pageSize ?? initialPageSize);
+  const [searchMode, setSearchMode] = useState<SearchMode>(
+    () => {
+      if (cached.current?.searchMode) return cached.current.searchMode;
+      return "all";
+    }
+  );
+  const [activeComboButton, setActiveComboButton] = useState<ComboButton>("both");
+  const [aiPanelHidden, setAiPanelHidden] = useState(cached.current?.aiPanelHidden ?? false);
+  const aiPanelHiddenRef = useRef(cached.current?.aiPanelHidden ?? false);
+  aiPanelHiddenRef.current = aiPanelHidden;
+  const [searchPanelHidden, setSearchPanelHidden] = useState(cached.current?.searchPanelHidden ?? false);
+  const [filterOptions, setFilterOptions] = useState<FilterOptions | null>(cachedFilterOptions);
+
+  const searchPanelRef = useRef<HTMLDivElement>(null);
+  const abortRef = useRef<AbortController | null>(null);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const skipSnippetFetch = useRef(!!cached.current?.query);
+  const scrollTargetOnPageChange = useRef<"top" | "panel" | null>(null);
+  const savedScrollY = useRef<number | null>(null);
+  if (savedScrollY.current === null && cached.current) {
+    try {
+      const v = sessionStorage.getItem(SCROLL_KEY);
+      if (v) savedScrollY.current = parseInt(v, 10);
+    } catch {}
+  }
+
+  const isSearching = query.trim() !== "";
+
+  // Sync query, page, and filters to URL (replaceState avoids history entries per keystroke)
+  useEffect(() => {
+    const params = new URLSearchParams();
+    if (query.trim()) params.set("q", query.trim());
+    if (page > 1) params.set("page", String(page));
+    if (sortBy !== "date-desc") params.set("sort", sortBy);
+    if (filterPreacher) params.set("preacher", filterPreacher);
+    if (filterSeries) params.set("series", filterSeries);
+    if (filterKeyword) params.set("keyword", filterKeyword);
+    if (filterPassage) params.set("passage", filterPassage);
+    if (filterDateFrom) params.set("dateFrom", filterDateFrom);
+    if (filterDateTo) params.set("dateTo", filterDateTo);
+    if (pageSize !== DEFAULT_PAGE_SIZE) params.set("pageSize", String(pageSize));
+    const qs = params.toString();
+    const url = qs ? `?${qs}` : window.location.pathname;
+    window.history.replaceState(null, "", url);
+  }, [query, page, sortBy, filterPreacher, filterSeries, filterKeyword, filterPassage, filterDateFrom, filterDateTo, pageSize]);
+
+  // Persist state to sessionStorage for back-navigation restore
+  useEffect(() => {
+    if (isSearching && results.length > 0 && !snippetsLoading) {
+      // Cache all snippets for the current page (including empty ones) so
+      // back-navigation doesn't re-fetch and cause a visible blink.
+      const cachedSnippets: Record<string, SermonSnippet[]> = {};
+      const pageIdSet = new Set(paginatedResults.map((s) => s.id));
+      for (const [id, s] of Object.entries(snippets)) {
+        if (s.length > 0 || pageIdSet.has(id)) cachedSnippets[id] = s;
+      }
+      try {
+        sessionStorage.setItem(
+          CACHE_KEY,
+          JSON.stringify({ query, page, results, snippets: cachedSnippets, sortBy, pageSize, searchMode, aiQuery, filterPreacher, filterSeries, filterKeyword, filterPassage, filterDateFrom, filterDateTo, aiPanelHidden, searchPanelHidden })
+        );
+      } catch {}
+    } else if (!isSearching) {
+      // In browse mode, still cache filter/sort/page state (results reload fast from index)
+      try {
+        sessionStorage.setItem(
+          CACHE_KEY,
+          JSON.stringify({ query: "", page, results: [], snippets: {}, sortBy, pageSize, searchMode, aiQuery, filterPreacher, filterSeries, filterKeyword, filterPassage, filterDateFrom, filterDateTo, aiPanelHidden, searchPanelHidden })
+        );
+      } catch {}
+    }
+  }, [query, page, results, snippets, snippetsLoading, isSearching, sortBy, pageSize, searchMode, aiQuery, filterPreacher, filterSeries, filterKeyword, filterPassage, filterDateFrom, filterDateTo, aiPanelHidden, searchPanelHidden]);
+
+  // Save scroll position continuously (throttled via rAF)
+  useEffect(() => {
+    let ticking = false;
+    const onScroll = () => {
+      if (!ticking) {
+        ticking = true;
+        requestAnimationFrame(() => {
+          try { sessionStorage.setItem(SCROLL_KEY, String(window.scrollY)); } catch {}
+          ticking = false;
+        });
+      }
+    };
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
+
+  // Restore scroll position after content loads
+  useEffect(() => {
+    if (!loading && restoring) {
+      if (savedScrollY.current !== null) {
+        const y = savedScrollY.current;
+        savedScrollY.current = null;
+        requestAnimationFrame(() => {
+          window.scrollTo(0, y);
+          setRestoring(false);
+        });
+      } else {
+        setRestoring(false);
+      }
+    }
+  }, [loading, restoring]);
+
+  // Load index and filter options (skip if already in memory)
+  useEffect(() => {
+    if (alreadyLoaded) return;
+
+    Promise.all([
+      loadSearchIndex(),
+      cachedFilterOptions
+        ? Promise.resolve(cachedFilterOptions)
+        : fetch("/filters.json").then((r) => r.json()),
+    ])
+      .then(([, filters]) => {
+        cachedFilterOptions = filters;
+        setFilterOptions(filters);
+        setLoading(false);
+        // Only set results if we didn't restore from cache
+        if (!cached.current) {
+          if (initialQuery.trim()) {
+            setResults(searchAll(stripQuotes(initialQuery)));
+          } else {
+            setResults(getAllSermons());
+          }
+        } else if (!cached.current.query) {
+          // Cached but was browsing (no query) — load all sermons
+          setResults(getAllSermons());
+        }
+      })
+      .catch((err) => {
+        console.error("Failed to load search index:", err);
+        setLoading(false);
+      });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Compute effective phrases/terms based on search mode.
+  // "exact" treats the entire query as one phrase; "all"/"any" respect manual quotes.
+  const effectiveParsed = useMemo(() => {
+    if (searchMode === "exact" && query.trim()) {
+      return { phrases: [stripQuotes(query.trim()).toLowerCase()], terms: [] };
+    }
+    return parseQuery(query);
+  }, [query, searchMode]);
+
+  const hasPhrases = effectiveParsed.phrases.length > 0;
+
+  // For phrase queries, send ALL result IDs so the API can filter by transcript content.
+  // For non-phrase queries, we only need snippets for display, not filtering.
+  const phraseSnippetIds = useMemo(() => {
+    if (!hasPhrases) return [];
+    return results.map((s) => s.id);
+  }, [results, hasPhrases]);
+
+  // Build the query string sent to the snippets API.
+  // For "exact" mode, wrap in quotes so the API treats the full query as a phrase.
+  const snippetApiQuery = useMemo(() => {
+    if (searchMode === "exact" && query.trim()) {
+      return `"${stripQuotes(query.trim())}"`;
+    }
+    return query.trim();
+  }, [query, searchMode]);
+
+  // Phrase-query snippet fetch (all IDs — needed for baseFiltered phrase filtering)
+  useEffect(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+
+    // Skip the first fetch if we restored snippets from cache
+    if (skipSnippetFetch.current) {
+      skipSnippetFetch.current = false;
+      return;
+    }
+
+    if (!query.trim()) {
+      setSnippets({});
+      setSnippetsLoading(false);
+      return;
+    }
+
+    // Non-phrase queries handle snippets separately (page-level fetch below)
+    if (!hasPhrases) {
+      if (abortRef.current) { abortRef.current.abort(); abortRef.current = null; }
+      setSnippetsLoading(false);
+      return;
+    }
+
+    if (phraseSnippetIds.length === 0) {
+      setSnippets({});
+      setSnippetsLoading(false);
+      return;
+    }
+
+    setSnippetsLoading(true);
+
+    debounceRef.current = setTimeout(async () => {
+      if (abortRef.current) abortRef.current.abort();
+      const controller = new AbortController();
+      abortRef.current = controller;
+
+      try {
+        const res = await fetch("/api/snippets", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            ids: phraseSnippetIds,
+            query: snippetApiQuery,
+            mode: searchMode,
+          }),
+          signal: controller.signal,
+        });
+        if (!res.ok) throw new Error("Snippet fetch failed");
+        const data = await res.json();
+        setSnippets(data);
+      } catch (err) {
+        if (err instanceof DOMException && err.name === "AbortError") return;
+        console.error("Snippet fetch error:", err);
+      } finally {
+        if (abortRef.current === controller) {
+          setSnippetsLoading(false);
+        }
+      }
+    }, 300);
+
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+  }, [query, phraseSnippetIds, hasPhrases, snippetApiQuery]);
+
+  const searchModeRef = useRef(searchMode);
+  searchModeRef.current = searchMode;
+
+  const searchLogTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const logSearch = useCallback((q: string, type: string, mode?: string, provider?: string) => {
+    if (searchLogTimer.current) clearTimeout(searchLogTimer.current);
+    searchLogTimer.current = setTimeout(() => {
+      fetch("/api/search-log", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query: q, type, mode, provider }),
+      }).catch(() => {});
+    }, 1000);
+  }, []);
+
+  const runSearch = useCallback((q: string) => {
+    setQuery(q);
+    setPage(1);
+    const mode = searchModeRef.current;
+    if (q.trim() !== "") {
+      setSortBy((prev) => (prev === "date-desc" ? "best-match" : prev));
+    } else {
+      setSortBy((prev) => (prev === "best-match" ? "date-desc" : prev));
+    }
+    if (!isLoaded()) return;
+    if (q.trim() === "") {
+      setResults(getAllSermons());
+    } else {
+      setResults(mode === "any" ? searchAny(q) : mode === "exact" ? search(stripQuotes(q)) : searchAll(stripQuotes(q)));
+    }
+  }, []);
+
+  const handleSearch = useCallback((q: string) => {
+    // Update input immediately so typing is never laggy
+    setInputValue(q);
+
+    // Combined mode: don't auto-search — wait for explicit submit
+    // Clear resets the AI query and restores the full sermon list
+    if (!q.trim()) {
+      setAiQuery("");
+      runSearch("");
+    }
+  }, [runSearch]);
+
+  // AI-only submit — stay on combo, only trigger AI
+  const handleAiOnlySubmit = useCallback(() => {
+    if (inputValue.trim()) {
+      const q = inputValue.trim();
+      if (q !== aiQueryRef.current) logSearch(q, "ai");
+      setAiQuery(q);
+      setAiSubmitCount((c) => c + 1);
+      setAiPanelHidden(false);
+    }
+  }, [inputValue, logSearch]);
+
+  // Word-search-only submit — stay on combo, only trigger FlexSearch
+  const handleWordSearchSubmit = useCallback(() => {
+    if (inputValue.trim()) {
+      logSearch(inputValue.trim(), "word-search");
+      setSearchPanelHidden(false);
+      startTransition(() => {
+        runSearch(inputValue.trim());
+      });
+    }
+  }, [inputValue, logSearch, runSearch]);
+
+  // Both AI and word search (combined submit / Enter key)
+  const handleAiSubmit = useCallback(() => {
+    if (inputValue.trim()) {
+      const q = inputValue.trim();
+      logSearch(q, "both");
+      // Always bump submitCount if the AI panel was hidden (component remounts
+      // with current count, so it needs a fresh bump to detect the change)
+      const wasAiHidden = aiPanelHiddenRef.current;
+      // Only re-trigger AI if the query actually changed (or panel was hidden)
+      if (q !== aiQueryRef.current || wasAiHidden) {
+        setAiQuery(q);
+        setAiSubmitCount((c) => c + 1);
+      }
+      // Also trigger FlexSearch
+      setAiPanelHidden(false);
+      setSearchPanelHidden(false);
+      startTransition(() => {
+        runSearch(q);
+      });
+    }
+  }, [inputValue, logSearch, runSearch]);
+
+  const handleSortChange = useCallback((v: SortBy) => {
+    setSortBy(v);
+    setPage(1);
+  }, []);
+
+  const handlePreacherChange = useCallback((v: string) => {
+    setFilterPreacher(v);
+    setPage(1);
+  }, []);
+
+  const handleSeriesChange = useCallback((v: string) => {
+    setFilterSeries(v);
+    setPage(1);
+  }, []);
+
+  const handleKeywordChange = useCallback((v: string) => {
+    setFilterKeyword(v);
+    setPage(1);
+  }, []);
+
+  const handlePassageChange = useCallback((v: string) => {
+    setFilterPassage(v);
+    setPage(1);
+  }, []);
+
+  const handleDateFromChange = useCallback((v: string) => {
+    setFilterDateFrom(v);
+    setPage(1);
+  }, []);
+
+  const handleDateToChange = useCallback((v: string) => {
+    setFilterDateTo(v);
+    setPage(1);
+  }, []);
+
+  const handlePageChange = useCallback((p: number) => {
+    setPage(p);
+    scrollTargetOnPageChange.current = "top";
+  }, []);
+
+  const handleCombinedPageChange = useCallback((p: number) => {
+    setPage(p);
+    scrollTargetOnPageChange.current = "panel";
+  }, []);
+
+  // Scroll after React re-renders with new page content – deferring avoids
+  // the browser re-adjusting the scroll position (especially on mobile) when
+  // the DOM updates after a synchronous scrollTo.
+  useEffect(() => {
+    const target = scrollTargetOnPageChange.current;
+    if (!target) return;
+    scrollTargetOnPageChange.current = null;
+    if (target === "panel") {
+      searchPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    } else {
+      window.scrollTo({ top: 0 });
+    }
+  }, [page]);
+
+  const handlePageSizeChange = useCallback((v: number) => {
+    setPageSize(v);
+    setPage(1);
+  }, []);
+
+  const bibleIndex = useMemo(() => {
+    if (loading) return null;
+    return buildBibleIndex(getAllSermons());
+  }, [loading]);
+
+  // Compute the base set of results (before metadata filters) for dynamic option computation.
+  // When snippets are loading for a phrase query, preserve the previous filtered results
+  // to avoid flashing a broader unfiltered candidate set.
+  const lastPhraseFiltered = useRef<SermonMeta[]>([]);
+  const baseFiltered = useMemo(() => {
+    if (isSearching) {
+      if (!hasPhrases) {
+        return results;
+      }
+      if (snippetsLoading) {
+        return lastPhraseFiltered.current;
+      }
+      // Keep results that have the phrase in the transcript OR in metadata fields
+      // (e.g. searching for "Ian Hamilton" should still show sermons preached by him)
+      const filtered = results.filter((s) => {
+        if (snippets[s.id] && snippets[s.id].length > 0) return true;
+        // Check if any phrase matches a metadata field
+        const meta = [s.title, s.preacher, s.bibleText, s.keywords, s.moreInfoText]
+          .filter(Boolean)
+          .map((v) => v!.toLowerCase());
+        return effectiveParsed.phrases.some((phrase) =>
+          meta.some((field) => field.includes(phrase))
+        );
+      });
+      lastPhraseFiltered.current = filtered;
+      return filtered;
+    }
+    return results;
+  }, [isSearching, results, snippets, snippetsLoading, effectiveParsed, hasPhrases]);
+
+  // Bible index filtered by other active filters (for passage picker cascading)
+  const pickerBibleIndex = useMemo(() => {
+    if (loading) return null;
+    let pool = baseFiltered;
+    if (filterPreacher) pool = pool.filter((s) => s.preacher === filterPreacher);
+    if (filterSeries) pool = pool.filter((s) => s.series === filterSeries);
+    if (filterKeyword) pool = pool.filter((s) =>
+      s.keywords != null && s.keywords.split(/\s+/).some((kw) => kw.toLowerCase() === filterKeyword.toLowerCase())
+    );
+    if (filterDateFrom) pool = pool.filter((s) => s.preachDate != null && s.preachDate >= filterDateFrom);
+    if (filterDateTo) pool = pool.filter((s) => s.preachDate != null && s.preachDate <= filterDateTo);
+    return buildBibleIndex(pool);
+  }, [loading, baseFiltered, filterPreacher, filterSeries, filterKeyword, filterDateFrom, filterDateTo]);
+
+  // Dynamic filter options: each dropdown only shows values compatible with the OTHER active filters
+  const dynamicFilterOptions = useMemo<FilterOptions | null>(() => {
+    if (!filterOptions) return null;
+
+    // For each filter, compute the pool of sermons matching all OTHER filters
+    const matchesSeries = (s: SermonMeta) => !filterSeries || s.series === filterSeries;
+    const matchesKeyword = (s: SermonMeta) =>
+      !filterKeyword || (s.keywords != null && s.keywords.split(/\s+/).some((kw) => kw.toLowerCase() === filterKeyword.toLowerCase()));
+    const matchesPreacher = (s: SermonMeta) => !filterPreacher || s.preacher === filterPreacher;
+    const matchesPassage = (s: SermonMeta) => {
+      if (!filterPassage || !bibleIndex) return true;
+      const parsed = parsePassageFilter(filterPassage);
+      const refs = bibleIndex.sermonRefs.get(s.id);
+      if (!refs) return false;
+      return matchesPassageFilter(refs, parsed.book, parsed.chapter, parsed.verse);
+    };
+    const matchesDate = (s: SermonMeta) => {
+      if (!filterDateFrom && !filterDateTo) return true;
+      if (!s.preachDate) return false;
+      if (filterDateFrom && s.preachDate < filterDateFrom) return false;
+      if (filterDateTo && s.preachDate > filterDateTo) return false;
+      return true;
+    };
+
+    const forPreachers = baseFiltered.filter((s) => matchesSeries(s) && matchesKeyword(s) && matchesPassage(s) && matchesDate(s));
+    const forSeries = baseFiltered.filter((s) => matchesPreacher(s) && matchesKeyword(s) && matchesPassage(s) && matchesDate(s));
+    const forKeywords = baseFiltered.filter((s) => matchesPreacher(s) && matchesSeries(s) && matchesPassage(s) && matchesDate(s));
+
+    const preachers = [...new Set(forPreachers.map((s) => s.preacher))].sort();
+    const series = [...new Set(forSeries.map((s) => s.series).filter(Boolean))].sort() as string[];
+    const keywords = [
+      ...new Set(
+        forKeywords
+          .map((s) => s.keywords)
+          .filter(Boolean)
+          .flatMap((kw) => (kw as string).split(/\s+/))
+          .map((kw) => kw.trim())
+          .filter((kw) => kw.length > 0)
+      ),
+    ].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
+
+    // Compute available date range from sermons matching all non-date filters
+    const forDates = baseFiltered.filter((s) => matchesPreacher(s) && matchesSeries(s) && matchesKeyword(s) && matchesPassage(s));
+    const dates = forDates.map((s) => s.preachDate).filter(Boolean) as string[];
+    const minDate = dates.length > 0 ? dates.reduce((a, b) => (a < b ? a : b)) : undefined;
+    const maxDate = dates.length > 0 ? dates.reduce((a, b) => (a > b ? a : b)) : undefined;
+    const availableDates = new Set(dates);
+
+    return { preachers, series, keywords, minDate, maxDate, availableDates };
+  }, [filterOptions, baseFiltered, filterPreacher, filterSeries, filterKeyword, filterPassage, filterDateFrom, filterDateTo, bibleIndex]);
+
+  // Apply filters/sort for browse mode, phrase filtering + filters for search mode
+  const displayResults = useMemo(() => {
+    let filtered = baseFiltered;
+
+    if (filterPreacher) {
+      filtered = filtered.filter((s) => s.preacher === filterPreacher);
+    }
+    if (filterSeries) {
+      filtered = filtered.filter((s) => s.series === filterSeries);
+    }
+    if (filterKeyword) {
+      filtered = filtered.filter((s) =>
+        s.keywords != null && s.keywords.split(/\s+/).some((kw) => kw.toLowerCase() === filterKeyword.toLowerCase())
+      );
+    }
+    if (filterPassage && bibleIndex) {
+      const parsed = parsePassageFilter(filterPassage);
+      filtered = filtered.filter((s) => {
+        const refs = bibleIndex.sermonRefs.get(s.id);
+        if (!refs) return false;
+        return matchesPassageFilter(refs, parsed.book, parsed.chapter, parsed.verse);
+      });
+    }
+    if (filterDateFrom) {
+      filtered = filtered.filter((s) => s.preachDate != null && s.preachDate >= filterDateFrom);
+    }
+    if (filterDateTo) {
+      filtered = filtered.filter((s) => s.preachDate != null && s.preachDate <= filterDateTo);
+    }
+
+    const eventOrder = (e: string | null) => (e === "Sunday - PM" ? 1 : 0);
+    const sorted = [...filtered];
+    switch (sortBy) {
+      case "best-match":
+        // Preserve search-engine relevance order
+        break;
+      case "date-desc":
+        sorted.sort((a, b) => {
+          if (!a.preachDate && !b.preachDate) return 0;
+          if (!a.preachDate) return 1;
+          if (!b.preachDate) return -1;
+          const diff = new Date(b.preachDate).getTime() - new Date(a.preachDate).getTime();
+          if (diff !== 0) return diff;
+          return eventOrder(b.eventType) - eventOrder(a.eventType);
+        });
+        break;
+      case "date-asc":
+        sorted.sort((a, b) => {
+          if (!a.preachDate && !b.preachDate) return 0;
+          if (!a.preachDate) return 1;
+          if (!b.preachDate) return -1;
+          const diff = new Date(a.preachDate).getTime() - new Date(b.preachDate).getTime();
+          if (diff !== 0) return diff;
+          return eventOrder(a.eventType) - eventOrder(b.eventType);
+        });
+        break;
+      case "preacher-asc":
+        sorted.sort((a, b) => a.preacher.localeCompare(b.preacher));
+        break;
+      case "title-asc":
+        sorted.sort((a, b) => a.title.localeCompare(b.title));
+        break;
+      // date-desc is the default order from getAllSermons()
+    }
+
+    return sorted;
+  }, [baseFiltered, filterPreacher, filterSeries, filterKeyword, filterPassage, filterDateFrom, filterDateTo, bibleIndex, sortBy]);
+
+  // Save nav list for sermon detail page prev/next navigation
+  useEffect(() => {
+    const params = new URLSearchParams();
+    if (query.trim()) params.set("q", query.trim());
+
+    if (displayResults.length === 0) return;
+    if (page > 1) params.set("page", String(page));
+    const navDefaultSort = query.trim() ? "best-match" : "date-desc";
+    if (sortBy !== navDefaultSort) params.set("sort", sortBy);
+    if (filterPreacher) params.set("preacher", filterPreacher);
+    if (filterSeries) params.set("series", filterSeries);
+    if (filterKeyword) params.set("keyword", filterKeyword);
+    if (filterPassage) params.set("passage", filterPassage);
+    if (filterDateFrom) params.set("dateFrom", filterDateFrom);
+    if (filterDateTo) params.set("dateTo", filterDateTo);
+    if (pageSize !== DEFAULT_PAGE_SIZE) params.set("pageSize", String(pageSize));
+    const qs = params.toString();
+    try {
+      sessionStorage.setItem(
+        NAV_LIST_KEY,
+        JSON.stringify({
+          ids: displayResults.map((s) => s.id),
+          query: query.trim(),
+          searchUrl: qs ? `/?${qs}` : "/",
+        })
+      );
+    } catch {}
+  }, [displayResults, query, page, sortBy, pageSize, filterPreacher, filterSeries, filterKeyword, filterPassage, filterDateFrom, filterDateTo]);
+
+  const pageSizeControl = (
+    <span className="hidden sm:inline text-sm text-gray-500 dark:text-gray-400">
+      Show{" "}
+      {PAGE_SIZES.map((size, i) => (
+        <span key={size}>
+          {i > 0 && <span className="mx-1">/</span>}
+          <button
+            onClick={() => handlePageSizeChange(size)}
+            className={`cursor-pointer ${size === pageSize ? "font-semibold text-gray-900 dark:text-gray-100" : "hover:text-gray-700 dark:hover:text-gray-300"}`}
+          >
+            {size}
+          </button>
+        </span>
+      ))}
+    </span>
+  );
+
+  const handleModeChange = useCallback((sm: SearchMode) => {
+    setSearchMode(sm);
+    searchModeRef.current = sm;
+    if (query.trim()) {
+      setSnippets({});
+      setSnippetsLoading(true);
+      snippetQueryRef.current = '';
+      startTransition(() => {
+        runSearch(query);
+      });
+    }
+  }, [runSearch, query]);
+
+  const modePills = (
+    <div className="flex gap-1">
+      {SEARCH_MODES.map((m) => (
+        <button
+          key={m.value}
+          type="button"
+          onClick={() => handleModeChange(m.value)}
+          className={`px-2.5 py-1 text-xs rounded-full cursor-pointer transition-colors ${
+            searchMode === m.value
+              ? "bg-gray-300 text-gray-700 dark:bg-gray-700 dark:text-gray-300"
+              : "text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300"
+          }`}
+        >
+          <span className="sm:hidden">{m.shortLabel}</span>
+          <span className="hidden sm:inline">{m.label}</span>
+        </button>
+      ))}
+    </div>
+  );
+
+  const totalPages = Math.ceil(displayResults.length / pageSize);
+  const paginatedResults = displayResults.slice(
+    (page - 1) * pageSize,
+    page * pageSize
+  );
+
+  // IDs of the sermons currently visible on the page — derived from stable
+  // memoized inputs so the reference only changes when content actually changes.
+  const pageIds = useMemo(() => {
+    const start = (page - 1) * pageSize;
+    return displayResults.slice(start, start + pageSize).map((s) => s.id);
+  }, [displayResults, page, pageSize]);
+
+  // Page-level snippet fetch for non-phrase queries.
+  // For phrase queries, snippets are already fetched above for all results.
+  const pageAbortRef = useRef<AbortController | null>(null);
+  const pageDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const snippetsRef = useRef(snippets);
+  snippetsRef.current = snippets;
+  const snippetQueryRef = useRef(query);
+  const snippetModeRef = useRef(searchMode);
+  const skipPageSnippetFetch = useRef(!!cached.current?.query);
+  useEffect(() => {
+    if (pageDebounceRef.current) clearTimeout(pageDebounceRef.current);
+
+    if (!query.trim() || hasPhrases || pageIds.length === 0) {
+      if (pageAbortRef.current) { pageAbortRef.current.abort(); pageAbortRef.current = null; }
+      return;
+    }
+
+    // When query or mode changes, all page IDs need fresh snippets regardless of cache
+    const needsRefresh = query !== snippetQueryRef.current || searchMode !== snippetModeRef.current;
+    const missing = needsRefresh
+      ? [...pageIds]
+      : pageIds.filter((id) => !(id in snippetsRef.current));
+    if (missing.length === 0) return;
+
+    setSnippetsLoading(true);
+
+    pageDebounceRef.current = setTimeout(async () => {
+      if (pageAbortRef.current) pageAbortRef.current.abort();
+      const controller = new AbortController();
+      pageAbortRef.current = controller;
+
+      try {
+        const res = await fetch("/api/snippets", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ids: missing, query: query.trim(), mode: searchMode }),
+          signal: controller.signal,
+        });
+        if (!res.ok) throw new Error("Snippet fetch failed");
+        const data: Record<string, SermonSnippet[]> = await res.json();
+        snippetQueryRef.current = query;
+        snippetModeRef.current = searchMode;
+        // Replace when refreshing (stale data); merge when paginating same query
+        if (needsRefresh) {
+          setSnippets(data);
+        } else {
+          setSnippets((prev) => ({ ...prev, ...data }));
+        }
+      } catch (err) {
+        if (err instanceof DOMException && err.name === "AbortError") return;
+        console.error("Snippet fetch error:", err);
+      } finally {
+        if (pageAbortRef.current === controller) {
+          setSnippetsLoading(false);
+        }
+      }
+    }, 100);
+
+    return () => {
+      if (pageDebounceRef.current) clearTimeout(pageDebounceRef.current);
+    };
+  }, [query, hasPhrases, pageIds, searchMode]);
+
+  return (
+      <div className="flex flex-col flex-1 w-full min-h-dvh bg-gray-50 dark:bg-gray-950 mx-auto px-4 py-6 sm:py-8 max-w-7xl" style={restoring ? { opacity: 0 } : undefined}>
+        <header className="text-center mb-10">
+          <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100 mb-2">
+            {process.env.NEXT_PUBLIC_SITE_TITLE || "Sermon Transcripts"}
+          </h1>
+          <p className="text-gray-500 dark:text-gray-400">
+            Search through sermon transcripts by keyword, preacher, passage, or
+            topic.
+          </p>
+        </header>
+
+        <div className="mb-2">
+          <SearchBar
+            value={inputValue}
+            onChange={handleSearch}
+            onSubmit={handleAiSubmit}
+            onAiSubmit={handleAiOnlySubmit}
+            onWordSearchSubmit={handleWordSearchSubmit}
+            loading={loading}
+            showSend={false}
+            showComboButtons
+            activeComboButton={activeComboButton}
+            onComboButtonChange={setActiveComboButton}
+          />
+          <p className="text-center text-xs text-gray-400 dark:text-gray-600 mt-2">
+            Please note that searches are logged to improve the quality of results.
+          </p>
+        </div>
+
+        {/* Combined mode: AI + Search side-by-side */}
+          <>
+            {/* Mobile panel toggle bar — visible only below lg */}
+            <div className="flex items-center justify-between lg:hidden mb-2">
+              {/* AI expand button — show when AI is hidden, or when both visible (to expand AI) */}
+              {(aiPanelHidden || !searchPanelHidden) && (
+              <button
+                onClick={() => aiPanelHidden ? setAiPanelHidden(false) : setSearchPanelHidden(true)}
+                className="flex pl-2 items-center gap-1 text-sm font-medium text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 cursor-pointer transition-colors"
+                title={aiPanelHidden ? "Show AI panel" : "Expand AI panel"}
+              >
+                <span>AI</span>
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="7 13 12 18 17 13"/><polyline points="7 6 12 11 17 6"/></svg>
+              </button>
+              )}
+              {/* Search expand button — show when search is hidden, or when both visible (to expand search) */}
+              {(searchPanelHidden || !aiPanelHidden) && (
+              <button
+                onClick={() => searchPanelHidden ? setSearchPanelHidden(false) : setAiPanelHidden(true)}
+                className="flex pr-2 items-center gap-1 text-sm font-medium text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 cursor-pointer transition-colors ml-auto"
+                title={searchPanelHidden ? "Show search panel" : "Expand search panel"}
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="17 11 12 6 7 11"/><polyline points="17 18 12 13 7 18"/></svg>
+                <span>Search</span>
+              </button>
+              )}
+            </div>
+
+            {/* Side-by-side on desktop, stacked on mobile */}
+            <div className={`flex flex-col lg:flex-row lg:items-start gap-6 ${(aiPanelHidden || searchPanelHidden) ? "flex-1" : ""}`}>
+              {/* AI panel — left on desktop, top on mobile */}
+              <div className={`w-full flex flex-col ${searchPanelHidden ? "" : "lg:w-1/2"} lg:min-w-0`} style={aiPanelHidden ? { display: 'none' } : undefined}>
+                <div className="relative hidden lg:flex items-center justify-center mb-2">
+                  {!searchPanelHidden && (
+                  <button
+                    onClick={() => setSearchPanelHidden(true)}
+                    className="absolute left-0 pl-4 flex items-center gap-1.5 text-sm font-medium text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 cursor-pointer transition-colors"
+                    title="Expand AI panel"
+                  >
+                    <span>AI</span>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="13 17 18 12 13 7"/><polyline points="6 17 11 12 6 7"/></svg>
+                  </button>
+                  )}
+                  <h2 className="text-sm font-medium text-gray-500 dark:text-gray-400 text-center">AI Answer</h2>
+                  {searchPanelHidden && (
+                  <button
+                    onClick={() => setSearchPanelHidden(false)}
+                    className="absolute right-0 pr-4 flex items-center gap-1.5 text-sm font-medium text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 cursor-pointer transition-colors"
+                    title="Show search panel"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="11 17 6 12 11 7"/><polyline points="18 17 13 12 18 7"/></svg>
+                    <span>Search</span>
+                  </button>
+                  )}
+                </div>
+                <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 bg-gray-100 dark:bg-gray-800 flex-1">
+                  <AiSearchResult query={aiQuery} submitCount={aiSubmitCount} />
+                </div>
+              </div>
+
+              {/* Sermon list — right on desktop, below on mobile */}
+              <div ref={searchPanelRef} className={`w-full ${aiPanelHidden ? "flex flex-col" : "lg:w-1/2"} lg:min-w-0`} style={searchPanelHidden ? { display: 'none' } : undefined}>
+                <div className="relative hidden lg:flex items-center justify-center mb-2">
+                  {aiPanelHidden && (
+                  <button
+                    onClick={() => setAiPanelHidden(false)}
+                    className="absolute left-0 pl-4 flex items-center gap-1.5 text-sm font-medium text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 cursor-pointer transition-colors"
+                    title="Show AI panel"
+                  >
+                    <span>AI</span>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="13 17 18 12 13 7"/><polyline points="6 17 11 12 6 7"/></svg>
+                  </button>
+                  )}
+                  <h2 className="text-sm font-medium text-gray-500 dark:text-gray-400 text-center">Search Results</h2>
+                  {!aiPanelHidden && (
+                  <button
+                    onClick={() => setAiPanelHidden(true)}
+                    className="absolute right-0 pr-4 flex items-center gap-1.5 text-sm font-medium text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 cursor-pointer transition-colors"
+                    title="Expand search panel"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="11 17 6 12 11 7"/><polyline points="18 17 13 12 18 7"/></svg>
+                    <span>Search</span>
+                  </button>
+                  )}
+                </div>
+                <div className={`border border-gray-200 dark:border-gray-700 rounded-lg p-4 bg-gray-100 dark:bg-gray-800 ${aiPanelHidden ? "flex-1" : ""}`}>
+                {dynamicFilterOptions && (
+                  <SermonFilters
+                    options={dynamicFilterOptions}
+                    sortBy={sortBy}
+                    preacher={filterPreacher}
+                    series={filterSeries}
+                    keyword={filterKeyword}
+                    passage={filterPassage}
+                    dateFrom={filterDateFrom}
+                    dateTo={filterDateTo}
+                    bibleIndex={bibleIndex}
+                    pickerBibleIndex={pickerBibleIndex}
+                    onSortChange={handleSortChange}
+                    onPreacherChange={handlePreacherChange}
+                    onSeriesChange={handleSeriesChange}
+                    onKeywordChange={handleKeywordChange}
+                    onPassageChange={handlePassageChange}
+                    onDateFromChange={handleDateFromChange}
+                    onDateToChange={handleDateToChange}
+                    isSearching={isSearching}
+                    toolbar={modePills}
+                  />
+                )}
+                <Pagination
+                  page={page}
+                  totalPages={totalPages}
+                  onPageChange={setPage}
+                />
+                {loading ? (
+                  <div className="flex items-center justify-center py-12 text-gray-400 dark:text-gray-500">
+                    <svg
+                      className="animate-spin"
+                      width="20"
+                      height="20"
+                      xmlns="http://www.w3.org/2000/svg"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                    >
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                    </svg>
+                  </div>
+                ) : isSearching ? (
+                  <SearchResultList
+                    sermons={paginatedResults}
+                    totalCount={displayResults.length}
+                    snippets={snippets}
+                    snippetsLoading={snippetsLoading}
+                    query={query}
+                    searchMode={searchMode}
+                    sortControl={<SortControl sortBy={sortBy} onSortChange={handleSortChange} isSearching />}
+                    pageSizeControl={pageSizeControl}
+                    twoColumn={aiPanelHidden}
+                  />
+                ) : (
+                  <SermonList
+                    sermons={paginatedResults}
+                    totalCount={displayResults.length}
+                    sortControl={<SortControl sortBy={sortBy} onSortChange={handleSortChange} />}
+                    pageSizeControl={pageSizeControl}
+                    twoColumn={aiPanelHidden}
+                  />
+                )}
+                <Pagination
+                  page={page}
+                  totalPages={totalPages}
+                  onPageChange={handleCombinedPageChange}
+                />
+                </div>
+              </div>
+
+            </div>
+          </>
+      </div>
+  );
+}
+
+export default function Home() {
+  return (
+    <Suspense
+      fallback={<main className="min-h-screen bg-gray-50 dark:bg-gray-950" />}
+    >
+      <HomeContent />
+    </Suspense>
+  );
+}
