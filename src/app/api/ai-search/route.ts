@@ -348,8 +348,11 @@ export async function POST(request: Request) {
           tools,
           stopWhen: stepCountIs(25),
           prepareStep({ stepNumber }) {
-            // Force tool use on the first step, then let the model decide
-            return stepNumber === 0 ? { toolChoice: "required" } : {};
+            // Force a searchSermons call on the first step to guarantee we always retrieve content
+            if (stepNumber === 0) {
+              return { toolChoice: { type: "tool", toolName: "searchSermons" } };
+            }
+            return {};
           },
           onStepFinish({ toolCalls, toolResults }) {
             if (toolCalls.length > 0) {
