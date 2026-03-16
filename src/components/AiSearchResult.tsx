@@ -597,10 +597,10 @@ function processInline(
   sourceByNormalized: Map<string, Source>,
   sourceIndex: Map<string, number>
 ): React.ReactNode {
-  // Match [Sermon Title, Preacher] citation patterns, **bold**, and *italic*
+  // Match [Sermon Title, Preacher] citation patterns, [Title] without preacher, **bold**, and *italic*
   const parts: React.ReactNode[] = [];
-  // Combined regex: citations [Title, Author], bold **text**, or italic *text*
-  const pattern = /\[([^\]]+?),\s*([^\]]+?)\]|\*\*(.+?)\*\*|\*(.+?)\*/g;
+  // Combined regex: citations [Title, Author], title-only citations [Title] (3+ chars, no comma, not followed by parens), bold **text**, or italic *text*
+  const pattern = /\[([^\]]+?),\s*([^\]]+?)\](?!\()|\[([^\],]{3,}?)\](?!\()|\*\*(.+?)\*\*|\*(.+?)\*/g;
   let last = 0;
   let match: RegExpExecArray | null;
   let key = 0;
@@ -610,14 +610,44 @@ function processInline(
       parts.push(text.slice(last, match.index));
     }
 
-    if (match[3] !== undefined) {
+    if (match[4] !== undefined) {
       // Bold — recurse so citations inside bold are still linked
-      parts.push(<strong key={key++}>{processInline(match[3], sourceByTitle, sourceByNormalized, sourceIndex)}</strong>);
-    } else if (match[4] !== undefined) {
+      parts.push(<strong key={key++}>{processInline(match[4], sourceByTitle, sourceByNormalized, sourceIndex)}</strong>);
+    } else if (match[5] !== undefined) {
       // Italic — recurse so citations inside italic are still linked
-      parts.push(<em key={key++}>{processInline(match[4], sourceByTitle, sourceByNormalized, sourceIndex)}</em>);
+      parts.push(<em key={key++}>{processInline(match[5], sourceByTitle, sourceByNormalized, sourceIndex)}</em>);
+    } else if (match[3] !== undefined) {
+      // Title-only citation [Title] — no preacher name provided
+      const title = match[3].trim();
+      const source = findSource(title, sourceByTitle, sourceByNormalized);
+      if (source) {
+        const num = sourceIndex.get(source.sermonID) ?? "?";
+        parts.push(
+          <Link
+            key={key++}
+            href={`/sermon/${source.sermonID}`}
+            className="text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 transition-colors no-underline"
+            title={`${source.title} — ${source.preacher}`}
+          >
+            <span className="italic">{source.title}</span>
+            <span
+              className="inline-flex items-center justify-center text-xs font-medium hover:bg-gray-200 dark:hover:bg-gray-700 rounded px-1 py-0.5 min-w-5 align-super"
+              style={{ fontSize: "0.7em", lineHeight: 1, verticalAlign: "super" }}
+            >
+              [{num}]
+            </span>
+          </Link>
+        );
+      } else {
+        parts.push(
+          <span key={key++} className="italic text-gray-400 dark:text-gray-500">
+            {title}
+            <span style={{ fontSize: "0.7em", verticalAlign: "super" }}> [?]</span>
+          </span>
+        );
+      }
     } else {
-      // Citation — may contain multiple semicolon-separated citations
+      // Citation with preacher — may contain multiple semicolon-separated citations
       const fullText = match[1] + ", " + match[2];
       const citations = fullText.split(/;\s*/);
       citations.forEach((cite, ci) => {
