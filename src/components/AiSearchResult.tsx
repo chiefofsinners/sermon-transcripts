@@ -139,18 +139,7 @@ function AiSearchResultInner({ query, submitCount }: { query: string; submitCoun
       return;
     }
 
-    // Read sources from response header
     let finalSources: Source[] = [];
-    try {
-      const sourcesHeader = res.headers.get("X-Sources");
-      if (sourcesHeader) {
-        const parsed = JSON.parse(decodeURIComponent(sourcesHeader));
-        if (Array.isArray(parsed)) {
-          finalSources = parsed;
-          setSources(parsed);
-        }
-      }
-    } catch {}
 
     const reader = res.body?.getReader();
     if (!reader) throw new Error("No response stream");
@@ -179,6 +168,14 @@ function AiSearchResultInner({ query, submitCount }: { query: string; submitCoun
           if (!inAnswer) {
             if (line === "§END_STATUS") {
               inAnswer = true;
+            } else if (line.startsWith("§SOURCES:")) {
+              try {
+                const parsed = JSON.parse(line.slice(9));
+                if (Array.isArray(parsed)) {
+                  finalSources = parsed;
+                  setSources(parsed);
+                }
+              } catch {}
             } else if (line.startsWith("§STATUS:")) {
               setStatusMessage(line.slice(8));
             } else if (line.startsWith("§ERROR:")) {

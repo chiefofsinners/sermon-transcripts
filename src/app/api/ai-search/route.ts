@@ -418,7 +418,9 @@ export async function POST(request: Request) {
           },
         });
 
-        // Signal end of status updates, start of answer
+        // Send sources and signal end of status updates
+        const sourcesArray = Array.from(sources.values());
+        controller.enqueue(encoder.encode(`§SOURCES:${JSON.stringify(sourcesArray)}\n`));
         controller.enqueue(encoder.encode("§END_STATUS\n"));
 
         // Pipe answer stream
@@ -444,13 +446,9 @@ export async function POST(request: Request) {
     },
   });
 
-  const sourcesArray = Array.from(sources.values());
-  const sourcesHeader = encodeURIComponent(JSON.stringify(sourcesArray));
-
   return new Response(stream, {
     headers: {
       "Content-Type": "text/plain; charset=utf-8",
-      "X-Sources": sourcesHeader,
     },
   });
 }
