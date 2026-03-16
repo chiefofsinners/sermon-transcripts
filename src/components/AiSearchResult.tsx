@@ -259,17 +259,26 @@ function AiSearchResultInner({ query, submitCount }: { query: string; submitCoun
   const initStore = useRef(readCacheStore());
   const initProvider = initStore.current?.lastProvider ?? "anthropic";
   const cached = useRef(readAiCache(query, initProvider));
+  // On mount, check if there's already a live stream for this query
+  const initLive =
+    liveStream &&
+    liveStream.query === query.trim() &&
+    liveStream.provider === initProvider &&
+    (liveStream.loading || liveStream.response);
   const [, forceUpdate] = useState(0);
   const [copied, setCopied] = useState(false);
-  const [submitted, setSubmitted] = useState(!!cached.current);
-  const [provider, setProvider] = useState<AiProvider>(initProvider);
+  const [submitted, setSubmitted] = useState(!!cached.current || !!initLive);
+  const [provider, setProvider] = useState<AiProvider>(
+    liveStream?.provider ?? initProvider
+  );
 
   // Sync React state from live stream or cache on mount/update
   const syncFromLiveStream = useCallback(() => forceUpdate((n) => n + 1), []);
 
   // Determine current display state: live stream > cache > empty
+  const trimmedQuery = query.trim();
   const isLiveForQuery =
-    liveStream && liveStream.query === query && liveStream.provider === provider;
+    liveStream && liveStream.query === trimmedQuery && liveStream.provider === provider;
   const response = isLiveForQuery
     ? liveStream!.response
     : cached.current?.response ?? "";
@@ -282,9 +291,14 @@ function AiSearchResultInner({ query, submitCount }: { query: string; submitCoun
     : "Searching sermons...";
   const error = isLiveForQuery ? liveStream!.error : null;
 
-  // Subscribe to live stream updates
+  // Subscribe to live stream updates — runs on mount and ensures
+  // the listener is attached before the first paint that needs it.
   useEffect(() => {
-    return subscribeLiveStream(syncFromLiveStream);
+    const unsub = subscribeLiveStream(syncFromLiveStream);
+    // Trigger an immediate sync in case liveStream already has data
+    // that the initial render missed (e.g. panel collapsed mid-stream)
+    syncFromLiveStream();
+    return unsub;
   }, [syncFromLiveStream]);
 
   const handleSubmit = useCallback((q: string) => {
