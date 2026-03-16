@@ -91,15 +91,13 @@ interface LiveStream {
   statusMessage: string;
   loading: boolean;
   error: string | null;
-  listeners: Set<StreamListener>;
 }
 
 let liveStream: LiveStream | null = null;
+const streamListeners = new Set<StreamListener>();
 
 function notifyListeners() {
-  if (liveStream) {
-    for (const fn of liveStream.listeners) fn();
-  }
+  for (const fn of streamListeners) fn();
 }
 
 /** Start a new background stream. Writes to liveStream and notifies listeners. */
@@ -114,7 +112,6 @@ function startLiveStream(query: string, provider: AiProvider) {
     statusMessage: "Searching sermons...",
     loading: true,
     error: null,
-    listeners: liveStream?.listeners ?? new Set(),
   };
   liveStream = stream;
   notifyListeners();
@@ -230,11 +227,9 @@ function startLiveStream(query: string, provider: AiProvider) {
 
 /** Subscribe to live stream updates. Returns unsubscribe function. */
 function subscribeLiveStream(listener: StreamListener): () => void {
-  if (liveStream) {
-    liveStream.listeners.add(listener);
-  }
+  streamListeners.add(listener);
   return () => {
-    if (liveStream) liveStream.listeners.delete(listener);
+    streamListeners.delete(listener);
   };
 }
 
