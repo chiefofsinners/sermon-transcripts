@@ -243,6 +243,59 @@ function createAgentTools(sources: Map<string, Source>) {
   };
 }
 
+// --- Logging helpers ---
+
+function summarizeToolInput(toolName: string, input: Record<string, unknown>): string {
+  switch (toolName) {
+    case "searchSermons": {
+      const parts = [`q="${input.query}"`];
+      if (input.preacher) parts.push(`preacher="${input.preacher}"`);
+      if (input.series) parts.push(`series="${input.series}"`);
+      if (input.bibleText) parts.push(`bible="${input.bibleText}"`);
+      if (input.maxResults) parts.push(`max=${input.maxResults}`);
+      return parts.join(", ");
+    }
+    case "getSermonTranscript":
+      return `id=${input.sermonID}`;
+    case "getSermonChunks":
+      return `id=${input.sermonID}, chunks=${input.chunkIndices ?? "all"}`;
+    case "listSermons": {
+      const parts: string[] = [];
+      if (input.preacher) parts.push(`preacher="${input.preacher}"`);
+      if (input.series) parts.push(`series="${input.series}"`);
+      if (input.limit) parts.push(`limit=${input.limit}`);
+      return parts.join(", ") || "all";
+    }
+    default:
+      return JSON.stringify(input).slice(0, 100);
+  }
+}
+
+function describeToolStep(toolName: string, input: Record<string, unknown>, resultCount: number): string {
+  switch (toolName) {
+    case "searchSermons": {
+      const q = String(input.query ?? "").slice(0, 60);
+      const filters: string[] = [];
+      if (input.preacher) filters.push(`by ${input.preacher}`);
+      if (input.bibleText) filters.push(`on ${input.bibleText}`);
+      const suffix = filters.length > 0 ? ` ${filters.join(", ")}` : "";
+      return `Searched "${q}"${suffix} — found ${resultCount} results`;
+    }
+    case "getSermonTranscript":
+      return `Reading full transcript...`;
+    case "getSermonChunks":
+      return `Reading sermon sections...`;
+    case "listSermons": {
+      const parts: string[] = [];
+      if (input.preacher) parts.push(`by ${input.preacher}`);
+      if (input.series) parts.push(`in series`);
+      return `Listing sermons${parts.length ? " " + parts.join(", ") : ""} — found ${resultCount}`;
+    }
+    default:
+      return `Processing...`;
+  }
+}
+
 // --- Main handler ---
 
 export async function POST(request: Request) {
@@ -277,96 +330,139 @@ export async function POST(request: Request) {
   const sources = new Map<string, Source>();
   const tools = createAgentTools(sources);
 
-  try {
-    // --- Phase A: Agentic Retrieval ---
-    const retrievalResult = await generateText({
-      model: getModel(provider),
-      system: RETRIEVAL_SYSTEM_PROMPT,
-      prompt: query,
-      tools,
-      stopWhen: stepCountIs(10),
-    });
+  // Stream status updates during retrieval, then answer text
+  const encoder = new TextEncoder();
+  const stream = new ReadableStream({
+    async start(controller) {
+      try {
+        // --- Phase A: Agentic Retrieval ---
+        const sendStatus = (msg: string) => {
+          controller.enqueue(encoder.encode(`§STATUS:${msg}\n`));
+        };
 
-    console.log(
-      `[ai-search] retrieval complete | steps=${retrievalResult.steps.length} | sources=${sources.size} | tool calls: ${
-        retrievalResult.steps
-          .flatMap((s) => s.toolCalls)
-          .map((tc) => tc.toolName)
-          .join(", ") || "none"
-      }`
-    );
+        sendStatus("Searching sermons...");
 
-    // Collect all chunk text from tool call results for context
-    const contextChunks: string[] = [];
-    for (const step of retrievalResult.steps) {
-      for (const toolResult of step.toolResults) {
-        const value = toolResult.output;
-        if (Array.isArray(value)) {
-          for (const item of value) {
-            if (item.chunkText) {
-              // searchSermons result
+        const retrievalResult = await generateText({
+          model: getModel(provider),
+          system: RETRIEVAL_SYSTEM_PROMPT,
+          prompt: query,
+          tools,
+          stopWhen: stepCountIs(10),
+          onStepFinish({ toolCalls, toolResults }) {
+            if (toolCalls.length > 0) {
+              for (let i = 0; i < toolCalls.length; i++) {
+                const tc = toolCalls[i];
+                const tr = toolResults[i];
+                const input = tc.input as Record<string, unknown>;
+                const resultCount = Array.isArray(tr?.output) ? tr.output.length : tr?.output ? 1 : 0;
+                console.log(
+                  `[ai-search] step tool=${tc.toolName} | ${summarizeToolInput(tc.toolName, input)} | results=${resultCount}`
+                );
+                sendStatus(describeToolStep(tc.toolName, input, resultCount));
+              }
+            } else {
+              console.log(`[ai-search] step (no tool calls — planning/finishing)`);
+            }
+          },
+        });
+
+        console.log(
+          `[ai-search] retrieval complete | steps=${retrievalResult.steps.length} | sources=${sources.size} | tool calls: ${
+            retrievalResult.steps
+              .flatMap((s) => s.toolCalls)
+              .map((tc) => tc.toolName)
+              .join(", ") || "none"
+          }`
+        );
+
+        // Collect all chunk text from tool call results for context
+        const contextChunks: string[] = [];
+        for (const step of retrievalResult.steps) {
+          for (const toolResult of step.toolResults) {
+            const value = toolResult.output;
+            if (Array.isArray(value)) {
+              for (const item of value) {
+                if (item.chunkText) {
+                  contextChunks.push(
+                    `[Source: "${item.title}" by ${item.preacher}${item.bibleText ? ` (${item.bibleText})` : ""}${item.preachDate ? `, ${item.preachDate}` : ""}]\n${item.chunkText}`
+                  );
+                } else if (item.text && item.chunkIndex !== undefined) {
+                  contextChunks.push(item.text);
+                }
+              }
+            } else if (value && typeof value === "object" && "transcript" in value) {
+              const v = value as { title: string; preacher: string; bibleText?: string; preachDate?: string; transcript: string };
               contextChunks.push(
-                `[Source: "${item.title}" by ${item.preacher}${item.bibleText ? ` (${item.bibleText})` : ""}${item.preachDate ? `, ${item.preachDate}` : ""}]\n${item.chunkText}`
+                `[Source: "${v.title}" by ${v.preacher}${v.bibleText ? ` (${v.bibleText})` : ""}${v.preachDate ? `, ${v.preachDate}` : ""}]\n${v.transcript}`
               );
-            } else if (item.text && item.chunkIndex !== undefined) {
-              // getSermonChunks result
-              contextChunks.push(item.text);
             }
           }
-        } else if (value && typeof value === "object" && "transcript" in value) {
-          // getSermonTranscript result
-          const v = value as { title: string; preacher: string; bibleText?: string; preachDate?: string; transcript: string };
-          contextChunks.push(
-            `[Source: "${v.title}" by ${v.preacher}${v.bibleText ? ` (${v.bibleText})` : ""}${v.preachDate ? `, ${v.preachDate}` : ""}]\n${v.transcript}`
-          );
         }
-      }
-    }
 
-    if (contextChunks.length === 0 && sources.size === 0) {
-      return new Response(
-        JSON.stringify({ error: "No relevant sermon content found" }),
-        { status: 200, headers: { "Content-Type": "application/json" } }
-      );
-    }
+        if (contextChunks.length === 0 && sources.size === 0) {
+          controller.enqueue(encoder.encode(`§ERROR:No relevant sermon content found\n`));
+          controller.close();
+          return;
+        }
 
-    const formattedContext = contextChunks.join("\n\n---\n\n");
-    const sourcesArray = Array.from(sources.values());
-    const sourcesHeader = encodeURIComponent(JSON.stringify(sourcesArray));
+        const formattedContext = contextChunks.join("\n\n---\n\n");
 
-    // --- Phase B: Streaming Answer ---
-    const result = streamText({
-      model: getModel(provider),
-      messages: [
-        {
-          role: "system",
-          content: AI_SYSTEM_PROMPT,
+        sendStatus(`Found ${sources.size} sermons — generating answer...`);
+
+        // --- Phase B: Streaming Answer ---
+        const result = streamText({
+          model: getModel(provider),
+          messages: [
+            {
+              role: "system",
+              content: AI_SYSTEM_PROMPT,
+              providerOptions: {
+                anthropic: { cacheControl: { type: "ephemeral" } },
+              },
+            },
+            {
+              role: "user",
+              content: `Here are relevant excerpts from sermons:\n\n${formattedContext}\n\nUser's question: ${query}`,
+            },
+          ],
           providerOptions: {
-            anthropic: { cacheControl: { type: "ephemeral" } },
+            openai: { promptCacheRetention: "24h" },
           },
-        },
-        {
-          role: "user",
-          content: `Here are relevant excerpts from sermons:\n\n${formattedContext}\n\nUser's question: ${query}`,
-        },
-      ],
-      providerOptions: {
-        openai: { promptCacheRetention: "24h" },
-      },
-    });
+        });
 
-    return result.toTextStreamResponse({
-      headers: {
-        "X-Sources": sourcesHeader,
-      },
-    });
-  } catch (err) {
-    console.error(`[ai-search] error (${provider}):`, err);
-    return new Response(
-      JSON.stringify({
-        error: `AI search failed: ${err instanceof Error ? err.message : "Unknown error"}`,
-      }),
-      { status: 500, headers: { "Content-Type": "application/json" } }
-    );
-  }
+        // Signal end of status updates, start of answer
+        controller.enqueue(encoder.encode("§END_STATUS\n"));
+
+        // Pipe answer stream
+        const reader = result.textStream.getReader();
+        try {
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            controller.enqueue(encoder.encode(value));
+          }
+        } finally {
+          reader.releaseLock();
+        }
+
+        controller.close();
+      } catch (err) {
+        console.error(`[ai-search] error (${provider}):`, err);
+        controller.enqueue(
+          encoder.encode(`§ERROR:${err instanceof Error ? err.message : "Unknown error"}\n`)
+        );
+        controller.close();
+      }
+    },
+  });
+
+  const sourcesArray = Array.from(sources.values());
+  const sourcesHeader = encodeURIComponent(JSON.stringify(sourcesArray));
+
+  return new Response(stream, {
+    headers: {
+      "Content-Type": "text/plain; charset=utf-8",
+      "X-Sources": sourcesHeader,
+    },
+  });
 }

@@ -101,6 +101,7 @@ function AiSearchResultInner({ query, submitCount }: { query: string; submitCoun
   const [response, setResponse] = useState(cached.current?.response ?? "");
   const [sources, setSources] = useState<Source[]>(cached.current?.sources ?? []);
   const [loading, setLoading] = useState(false);
+  const [statusMessage, setStatusMessage] = useState("Searching sermons...");
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [submitted, setSubmitted] = useState(!!cached.current);
@@ -110,6 +111,8 @@ function AiSearchResultInner({ query, submitCount }: { query: string; submitCoun
   providerRef.current = provider;
 
   const streamSearch = useCallback(async (q: string, signal: AbortSignal) => {
+    setStatusMessage("Searching sermons...");
+
     const res = await fetch("/api/ai-search", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -137,20 +140,25 @@ function AiSearchResultInner({ query, submitCount }: { query: string; submitCoun
     }
 
     // Read sources from response header
+    let finalSources: Source[] = [];
     try {
       const sourcesHeader = res.headers.get("X-Sources");
       if (sourcesHeader) {
         const parsed = JSON.parse(decodeURIComponent(sourcesHeader));
-        if (Array.isArray(parsed)) setSources(parsed);
+        if (Array.isArray(parsed)) {
+          finalSources = parsed;
+          setSources(parsed);
+        }
       }
     } catch {}
 
-    // Handle plain text stream from toTextStreamResponse
     const reader = res.body?.getReader();
     if (!reader) throw new Error("No response stream");
 
     const decoder = new TextDecoder();
-    let accumulated = "";
+    let buffer = "";        // raw bytes not yet split into lines
+    let accumulated = "";   // answer text only
+    let inAnswer = false;   // true after §END_STATUS
     let streamError: string | null = null;
 
     try {
@@ -158,18 +166,51 @@ function AiSearchResultInner({ query, submitCount }: { query: string; submitCoun
         const { done, value } = await reader.read();
         if (done) break;
 
-        const chunk = decoder.decode(value, { stream: true });
-        accumulated += chunk;
-        // Strip any trailing ---SOURCES--- or --- the model might add
-        const display = accumulated.replace(/\n*---\s*SOURCES?\s*---[\s\S]*$/, "").replace(/\n*---\s*$/, "");
-        setResponse(display);
+        buffer += decoder.decode(value, { stream: true });
+
+        // Process complete lines from the buffer
+        while (true) {
+          const nlIndex = buffer.indexOf("\n");
+          if (nlIndex === -1) break;
+
+          const line = buffer.slice(0, nlIndex);
+          buffer = buffer.slice(nlIndex + 1);
+
+          if (!inAnswer) {
+            if (line === "§END_STATUS") {
+              inAnswer = true;
+            } else if (line.startsWith("§STATUS:")) {
+              setStatusMessage(line.slice(8));
+            } else if (line.startsWith("§ERROR:")) {
+              throw new Error(line.slice(7));
+            }
+          } else {
+            // Answer text — re-add the newline
+            accumulated += (accumulated ? "\n" : "") + line;
+            const display = accumulated.replace(/\n*---\s*SOURCES?\s*---[\s\S]*$/, "").replace(/\n*---\s*$/, "");
+            setResponse(display);
+          }
+        }
+
+        // If we're in answer mode and there's remaining buffer (partial line), show it
+        if (inAnswer && buffer) {
+          const display = (accumulated + (accumulated ? "\n" : "") + buffer)
+            .replace(/\n*---\s*SOURCES?\s*---[\s\S]*$/, "")
+            .replace(/\n*---\s*$/, "");
+          setResponse(display);
+        }
       }
     } catch (readErr) {
       if (readErr instanceof DOMException && readErr.name === "AbortError") throw readErr;
+      if (readErr instanceof Error && readErr.message) throw readErr;
       streamError = readErr instanceof Error ? readErr.message : "Stream interrupted";
     }
 
-    // Final cleanup of accumulated text
+    // Flush any remaining buffer
+    if (buffer) {
+      accumulated += (accumulated ? "\n" : "") + buffer;
+    }
+
     const finalResponse = accumulated
       .replace(/\n*---\s*SOURCES?\s*---[\s\S]*$/, "")
       .replace(/\n*---\s*$/, "")
@@ -183,18 +224,7 @@ function AiSearchResultInner({ query, submitCount }: { query: string; submitCoun
       );
     }
     setResponse(finalResponse);
-
-    // Read sources again from final state (they were set during streaming)
-    // Write to session cache using current sources state
-    const finalSources: Source[] = [];
-    try {
-      const sourcesHeader = res.headers.get("X-Sources");
-      if (sourcesHeader) {
-        const parsed = JSON.parse(decodeURIComponent(sourcesHeader));
-        if (Array.isArray(parsed)) finalSources.push(...parsed);
-      }
-    } catch {}
-    writeAiCache(q, finalResponse, finalSources.length > 0 ? finalSources : [], providerRef.current);
+    writeAiCache(q, finalResponse, finalSources, providerRef.current);
   }, []);
 
   const handleSubmit = useCallback(async (q: string) => {
@@ -382,7 +412,7 @@ function AiSearchResultInner({ query, submitCount }: { query: string; submitCoun
               d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
             />
           </svg>
-          <span>Searching sermons and generating answer...</span>
+          <span>{statusMessage}</span>
         </div>
       )}
 
