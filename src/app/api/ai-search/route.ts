@@ -439,8 +439,12 @@ export async function POST(request: Request) {
         const sourcesArray = Array.from(sources.values());
         sendStatus(`Found ${sourcesArray.length} sermons — generating answer...`);
         if (!controllerClosed) {
-          controller.enqueue(encoder.encode(`§SOURCES:${JSON.stringify(sourcesArray)}\n`));
-          controller.enqueue(encoder.encode("§END_STATUS\n"));
+          try {
+            controller.enqueue(encoder.encode(`§SOURCES:${JSON.stringify(sourcesArray)}\n`));
+            controller.enqueue(encoder.encode("§END_STATUS\n"));
+          } catch {
+            controllerClosed = true;
+          }
         }
 
         // Pipe answer stream
@@ -448,9 +452,13 @@ export async function POST(request: Request) {
         try {
           while (true) {
             const { done, value } = await reader.read();
-            if (done) break;
-            if (controllerClosed) break;
-            controller.enqueue(encoder.encode(value));
+            if (done || controllerClosed) break;
+            try {
+              controller.enqueue(encoder.encode(value));
+            } catch {
+              controllerClosed = true;
+              break;
+            }
           }
         } finally {
           reader.releaseLock();
