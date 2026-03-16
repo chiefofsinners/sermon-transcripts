@@ -60,8 +60,7 @@ function readCache(query: string, page: number): CachedState | null {
       }
     }
     // If URL params don't match but we have a cached AI query, still restore
-    // (combined mode may have query in cache but not in URL on first load)
-    if (cached.aiQuery && cached.results?.length) {
+    if (cached.aiQuery) {
       return cached;
     }
   } catch {}

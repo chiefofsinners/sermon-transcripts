@@ -327,9 +327,9 @@ export async function POST(request: Request) {
   const encoder = new TextEncoder();
   const stream = new ReadableStream({
     async start(controller) {
+      let controllerClosed = false;
       try {
         // --- Phase A: Agentic Retrieval ---
-        let controllerClosed = false;
         const sendStatus = (msg: string) => {
           if (controllerClosed) return;
           try {
@@ -414,8 +414,6 @@ export async function POST(request: Request) {
 
         const formattedContext = contextChunks.join("\n\n---\n\n");
 
-        sendStatus(`Found ${sources.size} sermons — generating answer...`);
-
         // --- Phase B: Streaming Answer ---
         const result = streamText({
           model: answerModel,
@@ -439,8 +437,11 @@ export async function POST(request: Request) {
 
         // Send sources and signal end of status updates
         const sourcesArray = Array.from(sources.values());
-        controller.enqueue(encoder.encode(`§SOURCES:${JSON.stringify(sourcesArray)}\n`));
-        controller.enqueue(encoder.encode("§END_STATUS\n"));
+        sendStatus(`Found ${sourcesArray.length} sermons — generating answer...`);
+        if (!controllerClosed) {
+          controller.enqueue(encoder.encode(`§SOURCES:${JSON.stringify(sourcesArray)}\n`));
+          controller.enqueue(encoder.encode("§END_STATUS\n"));
+        }
 
         // Pipe answer stream
         const reader = result.textStream.getReader();
@@ -448,19 +449,28 @@ export async function POST(request: Request) {
           while (true) {
             const { done, value } = await reader.read();
             if (done) break;
+            if (controllerClosed) break;
             controller.enqueue(encoder.encode(value));
           }
         } finally {
           reader.releaseLock();
         }
 
-        controller.close();
+        if (!controllerClosed) {
+          controllerClosed = true;
+          controller.close();
+        }
       } catch (err) {
-        console.error(`[ai-search] error (${provider}):`, err);
-        controller.enqueue(
-          encoder.encode(`§ERROR:${err instanceof Error ? err.message : "Unknown error"}\n`)
-        );
-        controller.close();
+        if (!controllerClosed) {
+          console.error(`[ai-search] error (${provider}):`, err);
+          try {
+            controller.enqueue(
+              encoder.encode(`§ERROR:${err instanceof Error ? err.message : "Unknown error"}\n`)
+            );
+            controller.close();
+          } catch { /* controller already closed */ }
+          controllerClosed = true;
+        }
       }
     },
   });
