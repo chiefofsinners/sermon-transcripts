@@ -43,7 +43,13 @@ export default function SearchBar({
   }, []);
 
   useEffect(() => {
-    inputRef.current?.focus();
+    // Only auto-focus on first visit, not on back-navigation (which pops the
+    // keyboard on mobile). sessionStorage flag is set after initial mount.
+    const key = "search-has-mounted";
+    if (!sessionStorage.getItem(key)) {
+      inputRef.current?.focus();
+      sessionStorage.setItem(key, "1");
+    }
     autoResize();
   }, [autoResize]);
 
