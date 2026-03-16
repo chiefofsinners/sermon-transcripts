@@ -12,6 +12,7 @@
     "prebuild": "tsx scripts/generate-index.ts",
     "generate-embeddings": "tsx scripts/generate-embeddings.ts",
     "rebuild-embeddings": "tsx scripts/generate-embeddings.ts --rebuild",
+    "migrate-to-supabase": "tsx scripts/migrate-to-supabase.ts",
     "pipeline": "npm run download && npm run generate-embeddings && npm run build"
   },
   "dependencies": {
@@ -22,7 +23,7 @@
     "@google-cloud/speech": "^7.2.1",
     "@google-cloud/storage": "^7.19.0",
     "@headlessui/react": "^2.2.9",
-    "@pinecone-database/pinecone": "^4.0.0",
+    "@supabase/supabase-js": "^2.49.4",
     "ai": "^6.0.94",
     "dotenv": "^17.2.4",
     "flexsearch": "^0.8.212",
@@ -30,7 +31,8 @@
     "openai": "^6.21.0",
     "react": "19.2.3",
     "react-dom": "19.2.3",
-    "tsx": "^4.21.0"
+    "tsx": "^4.21.0",
+    "zod": "^3.25.36"
   },
   "devDependencies": {
     "@resvg/resvg-js": "^2.6.2",
