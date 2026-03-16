@@ -73,6 +73,16 @@ function createAgentTools(sources: Map<string, Source>) {
           return { error: error.message };
         }
 
+        console.log(`[ai-search] searchSermons returned ${data?.length ?? 0} rows for q="${String(query).slice(0, 50)}"`);
+        if (data?.length === 0) {
+          // Debug: check if chunks exist at all
+          const { count } = await supabase
+            .from("sermon_chunks")
+            .select("*", { count: "exact", head: true })
+            .not("embedding", "is", null);
+          console.log(`[ai-search] debug: chunks with embeddings = ${count}`);
+        }
+
         const results = (data ?? []).map((row: {
           sermon_id: string;
           title: string;

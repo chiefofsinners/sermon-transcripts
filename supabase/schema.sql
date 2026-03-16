@@ -31,10 +31,12 @@ create table if not exists sermon_chunks (
 -- Indexes
 -- ============================================================
 
--- Vector similarity search (IVF-Flat, cosine)
+-- Vector similarity search (HNSW, cosine)
+-- HNSW maintains accuracy as data is inserted, unlike IVF-Flat which
+-- requires rebuilding after bulk loads.
 create index if not exists idx_chunks_embedding
-  on sermon_chunks using ivfflat (embedding vector_cosine_ops)
-  with (lists = 100);
+  on sermon_chunks using hnsw (embedding vector_cosine_ops)
+  with (m = 16, ef_construction = 64);
 
 -- Metadata filters on sermons
 create index if not exists idx_sermons_preacher   on sermons (preacher);
