@@ -53,7 +53,7 @@ function createAgentTools(sources: Map<string, Source>) {
         bibleText: z.string().optional().describe("Filter to sermons on a specific Bible passage"),
         dateFrom: z.string().optional().describe("Filter to sermons preached on or after this date (YYYY-MM-DD)"),
         dateTo: z.string().optional().describe("Filter to sermons preached on or before this date (YYYY-MM-DD)"),
-        maxResults: z.number().optional().default(20).describe("Maximum number of chunks to return (default 20)"),
+        maxResults: z.number().optional().default(50).describe("Maximum number of chunks to return (default 50)"),
       }),
       execute: async ({ query, preacher, series, bibleText, dateFrom, dateTo, maxResults }) => {
         const queryEmbedding = (await embed([query], "query"))[0];
