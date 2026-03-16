@@ -329,8 +329,14 @@ export async function POST(request: Request) {
     async start(controller) {
       try {
         // --- Phase A: Agentic Retrieval ---
+        let controllerClosed = false;
         const sendStatus = (msg: string) => {
-          controller.enqueue(encoder.encode(`§STATUS:${msg}\n`));
+          if (controllerClosed) return;
+          try {
+            controller.enqueue(encoder.encode(`§STATUS:${msg}\n`));
+          } catch {
+            controllerClosed = true;
+          }
         };
 
         sendStatus("Searching sermons...");
@@ -398,6 +404,7 @@ export async function POST(request: Request) {
 
         if (contextChunks.length === 0 && sources.size === 0) {
           controller.enqueue(encoder.encode(`§ERROR:No relevant sermon content found\n`));
+          controllerClosed = true;
           controller.close();
           return;
         }
