@@ -77,6 +77,167 @@ function writeAiCache(query: string, response: string, sources: Source[], provid
   } catch {}
 }
 
+// ──────────────────────────────────────────────────────────────
+// Module-level live stream — survives component unmount/remount
+// ──────────────────────────────────────────────────────────────
+
+type StreamListener = () => void;
+
+interface LiveStream {
+  query: string;
+  provider: AiProvider;
+  response: string;
+  sources: Source[];
+  statusMessage: string;
+  loading: boolean;
+  error: string | null;
+  listeners: Set<StreamListener>;
+}
+
+let liveStream: LiveStream | null = null;
+
+function notifyListeners() {
+  if (liveStream) {
+    for (const fn of liveStream.listeners) fn();
+  }
+}
+
+/** Start a new background stream. Writes to liveStream and notifies listeners. */
+function startLiveStream(query: string, provider: AiProvider) {
+  // Abort any existing stream by marking it done (the old fetch will just write
+  // to a stale reference that nothing listens to)
+  const stream: LiveStream = {
+    query,
+    provider,
+    response: "",
+    sources: [],
+    statusMessage: "Searching sermons...",
+    loading: true,
+    error: null,
+    listeners: liveStream?.listeners ?? new Set(),
+  };
+  liveStream = stream;
+  notifyListeners();
+
+  // Fire-and-forget — runs even after unmount
+  (async () => {
+    try {
+      const res = await fetch("/api/ai-search", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query, provider }),
+      });
+
+      // If a newer stream started while we were fetching, bail out
+      if (liveStream !== stream) return;
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || `Search request failed (${res.status})`);
+      }
+
+      const contentType = res.headers.get("content-type") || "";
+      if (contentType.includes("application/json")) {
+        const data = await res.json();
+        if (data.error) throw new Error(data.error);
+        return;
+      }
+
+      const reader = res.body?.getReader();
+      if (!reader) throw new Error("No response stream");
+
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let accumulated = "";
+      let inAnswer = false;
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (liveStream !== stream) { reader.cancel(); return; }
+
+        buffer += decoder.decode(value, { stream: true });
+
+        while (true) {
+          const nlIndex = buffer.indexOf("\n");
+          if (nlIndex === -1) break;
+          const line = buffer.slice(0, nlIndex);
+          buffer = buffer.slice(nlIndex + 1);
+
+          if (!inAnswer) {
+            if (line === "§END_STATUS") {
+              inAnswer = true;
+            } else if (line.startsWith("§SOURCES:")) {
+              try {
+                const parsed = JSON.parse(line.slice(9));
+                if (Array.isArray(parsed)) {
+                  stream.sources = parsed;
+                  notifyListeners();
+                }
+              } catch {}
+            } else if (line.startsWith("§STATUS:")) {
+              stream.statusMessage = line.slice(8);
+              notifyListeners();
+            } else if (line.startsWith("§ERROR:")) {
+              throw new Error(line.slice(7));
+            }
+          } else {
+            accumulated += (accumulated ? "\n" : "") + line;
+            stream.response = accumulated
+              .replace(/\n*---\s*SOURCES?\s*---[\s\S]*$/, "")
+              .replace(/\n*---\s*$/, "");
+            notifyListeners();
+          }
+        }
+
+        if (inAnswer && buffer) {
+          stream.response = (accumulated + (accumulated ? "\n" : "") + buffer)
+            .replace(/\n*---\s*SOURCES?\s*---[\s\S]*$/, "")
+            .replace(/\n*---\s*$/, "");
+          notifyListeners();
+        }
+      }
+
+      // Flush remaining buffer
+      if (buffer) {
+        accumulated += (accumulated ? "\n" : "") + buffer;
+      }
+
+      if (liveStream !== stream) return;
+
+      const finalResponse = accumulated
+        .replace(/\n*---\s*SOURCES?\s*---[\s\S]*$/, "")
+        .replace(/\n*---\s*$/, "")
+        .trim();
+
+      if (!finalResponse) {
+        const providerName = { anthropic: "Claude", deepseek: "DeepSeek", openai: "GPT", xai: "Grok" }[provider] || "The model";
+        throw new Error(`${providerName} is currently unavailable. Try again or switch to a different model.`);
+      }
+
+      stream.response = finalResponse;
+      stream.loading = false;
+      notifyListeners();
+      writeAiCache(query, finalResponse, stream.sources, provider);
+    } catch (err) {
+      if (liveStream !== stream) return;
+      stream.error = err instanceof Error ? err.message : "Something went wrong";
+      stream.loading = false;
+      notifyListeners();
+    }
+  })();
+}
+
+/** Subscribe to live stream updates. Returns unsubscribe function. */
+function subscribeLiveStream(listener: StreamListener): () => void {
+  if (liveStream) {
+    liveStream.listeners.add(listener);
+  }
+  return () => {
+    if (liveStream) liveStream.listeners.delete(listener);
+  };
+}
+
 
 export default function AiSearchResult({ query, submitCount }: { query: string; submitCount?: number }) {
   return (
@@ -98,158 +259,39 @@ function AiSearchResultInner({ query, submitCount }: { query: string; submitCoun
   const initStore = useRef(readCacheStore());
   const initProvider = initStore.current?.lastProvider ?? "anthropic";
   const cached = useRef(readAiCache(query, initProvider));
-  const [response, setResponse] = useState(cached.current?.response ?? "");
-  const [sources, setSources] = useState<Source[]>(cached.current?.sources ?? []);
-  const [loading, setLoading] = useState(false);
-  const [statusMessage, setStatusMessage] = useState("Searching sermons...");
+  const [, forceUpdate] = useState(0);
   const [copied, setCopied] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [submitted, setSubmitted] = useState(!!cached.current);
   const [provider, setProvider] = useState<AiProvider>(initProvider);
-  const abortRef = useRef<AbortController | null>(null);
-  const providerRef = useRef(provider);
-  providerRef.current = provider;
 
-  const streamSearch = useCallback(async (q: string, signal: AbortSignal) => {
-    setStatusMessage("Searching sermons...");
+  // Sync React state from live stream or cache on mount/update
+  const syncFromLiveStream = useCallback(() => forceUpdate((n) => n + 1), []);
 
-    const res = await fetch("/api/ai-search", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        query: q,
-        provider: providerRef.current,
-      }),
-      signal,
-    });
+  // Determine current display state: live stream > cache > empty
+  const isLiveForQuery =
+    liveStream && liveStream.query === query && liveStream.provider === provider;
+  const response = isLiveForQuery
+    ? liveStream!.response
+    : cached.current?.response ?? "";
+  const sources = isLiveForQuery
+    ? liveStream!.sources
+    : cached.current?.sources ?? [];
+  const loading = isLiveForQuery ? liveStream!.loading : false;
+  const statusMessage = isLiveForQuery
+    ? liveStream!.statusMessage
+    : "Searching sermons...";
+  const error = isLiveForQuery ? liveStream!.error : null;
 
-    if (!res.ok) {
-      const data = await res.json().catch(() => ({}));
-      throw new Error(data.error || `Search request failed (${res.status})`);
-    }
+  // Subscribe to live stream updates
+  useEffect(() => {
+    return subscribeLiveStream(syncFromLiveStream);
+  }, [syncFromLiveStream]);
 
-    const contentType = res.headers.get("content-type") || "";
-
-    // Handle non-streaming JSON response (error case)
-    if (contentType.includes("application/json")) {
-      const data = await res.json();
-      if (data.error) {
-        throw new Error(data.error);
-      }
-      return;
-    }
-
-    let finalSources: Source[] = [];
-
-    const reader = res.body?.getReader();
-    if (!reader) throw new Error("No response stream");
-
-    const decoder = new TextDecoder();
-    let buffer = "";        // raw bytes not yet split into lines
-    let accumulated = "";   // answer text only
-    let inAnswer = false;   // true after §END_STATUS
-    let streamError: string | null = null;
-
-    try {
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-
-        // Process complete lines from the buffer
-        while (true) {
-          const nlIndex = buffer.indexOf("\n");
-          if (nlIndex === -1) break;
-
-          const line = buffer.slice(0, nlIndex);
-          buffer = buffer.slice(nlIndex + 1);
-
-          if (!inAnswer) {
-            if (line === "§END_STATUS") {
-              inAnswer = true;
-            } else if (line.startsWith("§SOURCES:")) {
-              try {
-                const parsed = JSON.parse(line.slice(9));
-                if (Array.isArray(parsed)) {
-                  finalSources = parsed;
-                  setSources(parsed);
-                }
-              } catch {}
-            } else if (line.startsWith("§STATUS:")) {
-              setStatusMessage(line.slice(8));
-            } else if (line.startsWith("§ERROR:")) {
-              throw new Error(line.slice(7));
-            }
-          } else {
-            // Answer text — re-add the newline
-            accumulated += (accumulated ? "\n" : "") + line;
-            const display = accumulated.replace(/\n*---\s*SOURCES?\s*---[\s\S]*$/, "").replace(/\n*---\s*$/, "");
-            setResponse(display);
-          }
-        }
-
-        // If we're in answer mode and there's remaining buffer (partial line), show it
-        if (inAnswer && buffer) {
-          const display = (accumulated + (accumulated ? "\n" : "") + buffer)
-            .replace(/\n*---\s*SOURCES?\s*---[\s\S]*$/, "")
-            .replace(/\n*---\s*$/, "");
-          setResponse(display);
-        }
-      }
-    } catch (readErr) {
-      if (readErr instanceof DOMException && readErr.name === "AbortError") throw readErr;
-      if (readErr instanceof Error && readErr.message) throw readErr;
-      streamError = readErr instanceof Error ? readErr.message : "Stream interrupted";
-    }
-
-    // Flush any remaining buffer
-    if (buffer) {
-      accumulated += (accumulated ? "\n" : "") + buffer;
-    }
-
-    const finalResponse = accumulated
-      .replace(/\n*---\s*SOURCES?\s*---[\s\S]*$/, "")
-      .replace(/\n*---\s*$/, "")
-      .trim();
-    if (!finalResponse) {
-      const providerName = { anthropic: "Claude", deepseek: "DeepSeek", openai: "GPT", xai: "Grok" }[providerRef.current] || "The model";
-      throw new Error(
-        streamError
-          ? `${providerName} encountered an error: ${streamError}`
-          : `${providerName} is currently unavailable. Try again or switch to a different model.`
-      );
-    }
-    setResponse(finalResponse);
-    writeAiCache(q, finalResponse, finalSources, providerRef.current);
-  }, []);
-
-  const handleSubmit = useCallback(async (q: string) => {
+  const handleSubmit = useCallback((q: string) => {
     if (!q.trim()) return;
-
-    // Cancel any in-flight request
-    if (abortRef.current) abortRef.current.abort();
-
-    const controller = new AbortController();
-    abortRef.current = controller;
-
-    setLoading(true);
-    setError(null);
-    setResponse("");
-    setSources([]);
     setSubmitted(true);
-
-    try {
-      await streamSearch(q.trim(), controller.signal);
-    } catch (err) {
-      if (err instanceof DOMException && err.name === "AbortError") return;
-      setError(err instanceof Error ? err.message : "Something went wrong");
-    } finally {
-      if (abortRef.current === controller) {
-        setLoading(false);
-      }
-    }
-  }, [streamSearch]);
+    startLiveStream(q.trim(), provider);
+  }, [provider]);
 
   // Submit when query changes (from the search bar), skip if restored from cache.
   // Also re-submit when submitCount bumps (user clicked send for same query).
@@ -259,51 +301,54 @@ function AiSearchResultInner({ query, submitCount }: { query: string; submitCoun
   const lastSubmitCount = useRef(hasRestoredResponse ? (submitCount ?? 0) : 0);
   useEffect(() => {
     if (!query.trim()) {
-      // Query cleared — abort and reset
-      if (abortRef.current) abortRef.current.abort();
-      setResponse("");
-      setSources([]);
-      setLoading(false);
-      setError(null);
+      // Query cleared — reset
       setSubmitted(false);
       lastQuery.current = "";
       return;
     }
+
+    // If there's already a live stream for this exact query+provider, just subscribe
+    if (
+      liveStream &&
+      liveStream.query === query.trim() &&
+      liveStream.provider === provider &&
+      (liveStream.loading || liveStream.response)
+    ) {
+      setSubmitted(true);
+      lastQuery.current = query;
+      lastSubmitCount.current = submitCount ?? 0;
+      return;
+    }
+
     const countChanged = (submitCount ?? 0) !== lastSubmitCount.current;
     if (query !== lastQuery.current || countChanged) {
       lastQuery.current = query;
       lastSubmitCount.current = submitCount ?? 0;
       handleSubmit(query);
     }
-  }, [query, submitCount, handleSubmit]);
+  }, [query, submitCount, handleSubmit, provider]);
 
-  // Cleanup on unmount
-  useEffect(() => {
-    return () => {
-      if (abortRef.current) abortRef.current.abort();
-    };
-  }, []);
-
-  const handleProviderChange = useCallback(async (p: AiProvider) => {
+  const handleProviderChange = useCallback((p: AiProvider) => {
     setProvider(p);
-    providerRef.current = p;
     // Only re-submit if we've already shown a response for this query
     if (!query.trim() || !submitted) return;
 
     // Check session cache before re-fetching
     const hit = readAiCache(query, p);
     if (hit) {
-      setResponse(hit.response);
-      setSources(hit.sources);
-      setError(null);
+      // Clear live stream so we show the cached version
+      liveStream = null;
+      cached.current = hit;
+      forceUpdate((n) => n + 1);
       // Update lastProvider in the store
       writeAiCache(query, hit.response, hit.sources, p);
       return;
     }
 
     // Full re-query for new provider
-    handleSubmit(query);
-  }, [query, submitted, handleSubmit]);
+    setSubmitted(true);
+    startLiveStream(query.trim(), p);
+  }, [query, submitted]);
 
   const handleCopy = useCallback(() => {
     if (!response) return;

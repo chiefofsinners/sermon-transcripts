@@ -87,7 +87,7 @@ function HomeContent() {
   const alreadyLoaded = isLoaded() && cachedFilterOptions !== null;
 
   const [query, setQuery] = useState(cached.current?.query ?? initialQuery);
-  const [inputValue, setInputValue] = useState(query);
+  const [inputValue, setInputValue] = useState(cached.current?.query || cached.current?.aiQuery || initialQuery);
   const [aiQuery, setAiQuery] = useState(cached.current?.aiQuery ?? initialQuery);
   const aiQueryRef = useRef(cached.current?.aiQuery ?? "");
   aiQueryRef.current = aiQuery;
