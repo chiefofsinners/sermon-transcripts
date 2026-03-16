@@ -341,6 +341,10 @@ export async function POST(request: Request) {
           prompt: query,
           tools,
           stopWhen: stepCountIs(25),
+          prepareStep({ stepNumber }) {
+            // Force tool use on the first step, then let the model decide
+            return stepNumber === 0 ? { toolChoice: "required" } : {};
+          },
           onStepFinish({ toolCalls, toolResults }) {
             if (toolCalls.length > 0) {
               for (let i = 0; i < toolCalls.length; i++) {
