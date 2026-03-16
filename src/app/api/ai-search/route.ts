@@ -340,7 +340,7 @@ export async function POST(request: Request) {
           system: RETRIEVAL_SYSTEM_PROMPT,
           prompt: query,
           tools,
-          stopWhen: stepCountIs(10),
+          stopWhen: stepCountIs(25),
           onStepFinish({ toolCalls, toolResults }) {
             if (toolCalls.length > 0) {
               for (let i = 0; i < toolCalls.length; i++) {
