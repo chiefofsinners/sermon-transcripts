@@ -73,16 +73,6 @@ function createAgentTools(sources: Map<string, Source>) {
           return { error: error.message };
         }
 
-        console.log(`[ai-search] searchSermons returned ${data?.length ?? 0} rows for q="${String(query).slice(0, 50)}"`);
-        if (data?.length === 0) {
-          // Debug: check if chunks exist at all
-          const { count } = await supabase
-            .from("sermon_chunks")
-            .select("*", { count: "exact", head: true })
-            .not("embedding", "is", null);
-          console.log(`[ai-search] debug: chunks with embeddings = ${count}`);
-        }
-
         const results = (data ?? []).map((row: {
           sermon_id: string;
           title: string;
@@ -215,7 +205,9 @@ function createAgentTools(sources: Map<string, Source>) {
           return { error: error.message };
         }
 
-        const results = (data ?? []).map((row: {
+        // listSermons is metadata-only — don't track as sources.
+        // Sources are only added when actual content (chunks/transcripts) is retrieved.
+        return (data ?? []).map((row: {
           sermon_id: string;
           title: string;
           preacher: string;
@@ -224,30 +216,16 @@ function createAgentTools(sources: Map<string, Source>) {
           series: string;
           event_type: string;
           subtitle: string;
-        }) => {
-          // Track source
-          if (!sources.has(row.sermon_id)) {
-            sources.set(row.sermon_id, {
-              sermonID: row.sermon_id,
-              title: row.title,
-              preacher: row.preacher,
-              preachDate: row.preach_date ?? "",
-              bibleText: row.bible_text ?? "",
-            });
-          }
-          return {
-            sermonID: row.sermon_id,
-            title: row.title,
-            preacher: row.preacher,
-            preachDate: row.preach_date,
-            bibleText: row.bible_text,
-            series: row.series,
-            eventType: row.event_type,
-            subtitle: row.subtitle,
-          };
-        });
-
-        return results;
+        }) => ({
+          sermonID: row.sermon_id,
+          title: row.title,
+          preacher: row.preacher,
+          preachDate: row.preach_date,
+          bibleText: row.bible_text,
+          series: row.series,
+          eventType: row.event_type,
+          subtitle: row.subtitle,
+        }));
       },
     }),
   };
