@@ -189,7 +189,7 @@ function createAgentTools(sources: Map<string, Source>) {
         series: z.string().optional().describe("Filter by series ID"),
         dateFrom: z.string().optional().describe("Filter sermons on or after this date (YYYY-MM-DD)"),
         dateTo: z.string().optional().describe("Filter sermons on or before this date (YYYY-MM-DD)"),
-        limit: z.number().optional().default(50).describe("Maximum results to return (default 50)"),
+        limit: z.number().optional().default(100).describe("Maximum results to return (default 100)"),
       }),
       execute: async ({ preacher, series, dateFrom, dateTo, limit }) => {
         const { data, error } = await supabase.rpc("list_sermons", {
