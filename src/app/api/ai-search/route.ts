@@ -311,8 +311,13 @@ export async function POST(request: Request) {
       ? rawProvider
       : "anthropic";
 
+  // Retrieval model: defaults to Anthropic (fast tool use), configurable via env
+  const retrievalProvider = (process.env.AI_RETRIEVAL_PROVIDER || "anthropic") as AiProvider;
+  const retrievalModel = getModel(retrievalProvider);
+  const answerModel = getModel(provider);
+
   const modelId = PROVIDER_MODEL_IDS[provider];
-  console.log(`[ai-search] ${new Date().toISOString()} | provider=${provider} | model=${modelId} | q="${query}"`);
+  console.log(`[ai-search] ${new Date().toISOString()} | provider=${provider} | model=${modelId} | retrieval=${retrievalProvider} | q="${query}"`);
 
   // Accumulate sources from all tool calls
   const sources = new Map<string, Source>();
@@ -331,7 +336,7 @@ export async function POST(request: Request) {
         sendStatus("Searching sermons...");
 
         const retrievalResult = await generateText({
-          model: getModel(provider),
+          model: retrievalModel,
           system: RETRIEVAL_SYSTEM_PROMPT,
           prompt: query,
           tools,
@@ -399,7 +404,7 @@ export async function POST(request: Request) {
 
         // --- Phase B: Streaming Answer ---
         const result = streamText({
-          model: getModel(provider),
+          model: answerModel,
           messages: [
             {
               role: "system",
