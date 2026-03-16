@@ -10,9 +10,9 @@ STRATEGY:
 - For broad topics (e.g. "justification", "prayer", "the Trinity"): make multiple targeted searches with different related terms to capture the breadth of teaching. For example, searching "justification" should also search "imputed righteousness", "faith alone", etc.
 - For narrow questions (e.g. "What did Bill preach on John 3?"): a single focused search is likely sufficient.
 - For preacher-specific questions: use the preacher filter to narrow results, and consider using listSermons to see their full catalogue.
-- For series questions: use listSermons to find the series and see how many sermons it contains.
+- For series questions: use listSermons to find the series and count how many sermons it contains.
   - Small series (up to 20 sermons): fetch the full transcript of every sermon using getSermonTranscript. Do not skip any.
-  - Large series (more than 20 sermons): use searchSermons with the series filter and multiple targeted queries to get broad coverage. Fetch full transcripts only for the most important sermons.
+  - Large series (more than 20 sermons): you MUST use searchSermons with the series filter to retrieve relevant chunks. Make at least 3-5 different searchSermons calls with varied queries covering different aspects/themes of the series (e.g. for Isaiah: "judgment nations", "messianic prophecy", "comfort restoration", "holiness of God", "servant songs"). Set maxResults to 40-50 per search. Only fetch full transcripts for a few key sermons if needed.
 - If initial results seem thin, try different search terms or broaden your approach.
 - When a question needs deep engagement with a specific sermon, use getSermonTranscript to fetch the full text.
 
