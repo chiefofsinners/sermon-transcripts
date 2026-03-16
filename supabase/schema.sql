@@ -91,7 +91,7 @@ begin
     join sermons s on s.sermon_id = c.sermon_id
     where
       (filter_preacher is null or s.preacher ilike '%' || filter_preacher || '%')
-      and (filter_series is null or s.series = filter_series)
+      and (filter_series is null or s.series = filter_series or s.subtitle ilike '%' || filter_series || '%')
       and (filter_date_from is null or s.preach_date >= filter_date_from)
       and (filter_date_to is null or s.preach_date <= filter_date_to)
       and (filter_bible_text is null or s.bible_text ilike '%' || filter_bible_text || '%')
@@ -138,7 +138,7 @@ begin
     from sermons s
     where
       (filter_preacher is null or s.preacher ilike '%' || filter_preacher || '%')
-      and (filter_series is null or s.series = filter_series)
+      and (filter_series is null or s.series = filter_series or s.subtitle ilike '%' || filter_series || '%')
       and (filter_date_from is null or s.preach_date >= filter_date_from)
       and (filter_date_to is null or s.preach_date <= filter_date_to)
     order by s.preach_date desc nulls last

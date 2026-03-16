@@ -49,7 +49,7 @@ function createAgentTools(sources: Map<string, Source>) {
       inputSchema: z.object({
         query: z.string().describe("The search query — what to look for in sermons"),
         preacher: z.string().optional().describe("Filter to a specific preacher name"),
-        series: z.string().optional().describe("Filter to a specific series ID"),
+        series: z.string().optional().describe("Filter by series ID or series name (e.g. 'Isaiah' will match 'Isaiah Series')"),
         bibleText: z.string().optional().describe("Filter to sermons on a specific Bible passage"),
         dateFrom: z.string().optional().describe("Filter to sermons preached on or after this date (YYYY-MM-DD)"),
         dateTo: z.string().optional().describe("Filter to sermons preached on or before this date (YYYY-MM-DD)"),
@@ -186,7 +186,7 @@ function createAgentTools(sources: Map<string, Source>) {
         "Search for sermons by metadata (preacher, series, date range) without vector search. Use this when you need to find sermons by a specific preacher, within a date range, or in a particular series.",
       inputSchema: z.object({
         preacher: z.string().optional().describe("Filter by preacher name"),
-        series: z.string().optional().describe("Filter by series ID"),
+        series: z.string().optional().describe("Filter by series ID or series name (e.g. 'Isaiah' will match 'Isaiah Series')"),
         dateFrom: z.string().optional().describe("Filter sermons on or after this date (YYYY-MM-DD)"),
         dateTo: z.string().optional().describe("Filter sermons on or before this date (YYYY-MM-DD)"),
         limit: z.number().optional().default(100).describe("Maximum results to return (default 100)"),
