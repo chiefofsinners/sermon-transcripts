@@ -8,7 +8,7 @@ import type { SermonData } from "../src/lib/types";
 
 const DATA_DIR = join(process.cwd(), "data", "sermons");
 const EMBEDDING_BATCH_SIZE = 96;
-const UPSERT_BATCH_SIZE = 100;
+const UPSERT_BATCH_SIZE = 10;
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -113,6 +113,33 @@ async function main() {
   }
 
   console.log(`New chunks to index: ${newChunks.length}`);
+
+  // Upsert parent sermon rows for any new chunks (FK constraint)
+  const newSermonIds = [...new Set(newChunks.map((c) => c.sermonID))];
+  const sermonsById = new Map(sermons.map((s) => [s.sermonID, s]));
+  console.log(`Upserting ${newSermonIds.length} sermon(s) to satisfy FK constraint...`);
+  for (let i = 0; i < newSermonIds.length; i += UPSERT_BATCH_SIZE) {
+    const batch = newSermonIds.slice(i, i + UPSERT_BATCH_SIZE);
+    const rows = batch.map((id) => {
+      const s = sermonsById.get(id)!;
+      return {
+        sermon_id: s.sermonID,
+        title: s.title || s.displayTitle,
+        preacher: s.preacher,
+        preach_date: s.preachDate || null,
+        bible_text: s.bibleText || null,
+        series: s.series || null,
+        event_type: s.eventType || null,
+        keywords: s.keywords || null,
+        subtitle: s.subtitle || null,
+        transcript: s.transcript,
+      };
+    });
+    const { error } = await supabase
+      .from("sermons")
+      .upsert(rows, { onConflict: "sermon_id" });
+    if (error) throw new Error(`Sermon upsert error: ${error.message}`);
+  }
 
   // Generate embeddings and upsert in batches
   console.log("Generating embeddings and upserting...");
