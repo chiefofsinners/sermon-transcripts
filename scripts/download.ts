@@ -42,7 +42,9 @@ async function apiFetch(url: string) {
 }
 
 async function fetchTranscriptText(downloadURL: string): Promise<string> {
-  const res = await fetch(downloadURL);
+  const res = await fetch(downloadURL, {
+    headers: { "X-Api-Key": API_KEY },
+  });
   if (!res.ok) {
     console.warn(`  Failed to download transcript: ${res.status}`);
     return "";
