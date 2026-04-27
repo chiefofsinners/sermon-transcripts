@@ -14,9 +14,9 @@ type AiProvider = "anthropic" | "deepseek" | "openai" | "xai";
 
 const PROVIDER_MODEL_IDS: Record<AiProvider, string> = {
   anthropic: process.env.AI_SEARCH_MODEL_ANTHROPIC || "claude-haiku-4-5",
-  deepseek: process.env.AI_SEARCH_MODEL_DEEPSEEK || "deepseek-chat",
-  openai: process.env.AI_SEARCH_MODEL_OPENAI || "gpt-5.2",
-  xai: process.env.AI_SEARCH_MODEL_XAI || "grok-4-fast-non-reasoning",
+  deepseek: process.env.AI_SEARCH_MODEL_DEEPSEEK || "deepseek-v4-flash",
+  openai: process.env.AI_SEARCH_MODEL_OPENAI || "gpt-5.5",
+  xai: process.env.AI_SEARCH_MODEL_XAI || "grok-4.20",
 };
 
 function getModel(provider: AiProvider) {
