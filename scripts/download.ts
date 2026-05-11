@@ -41,15 +41,16 @@ async function apiFetch(url: string) {
   return res.json();
 }
 
-async function fetchTranscriptText(downloadURL: string): Promise<string> {
-  const res = await fetch(downloadURL, {
+async function fetchTranscriptText(sermonID: string): Promise<string> {
+  const res = await fetch(`${API_BASE}/sermons/${sermonID}/transcript`, {
     headers: { "X-Api-Key": API_KEY },
   });
   if (!res.ok) {
     console.warn(`  Failed to download transcript: ${res.status}`);
     return "";
   }
-  return res.text();
+  const data = (await res.json()) as { content?: string };
+  return data.content ?? "";
 }
 
 interface APISermon {
@@ -119,9 +120,7 @@ async function downloadAllSermons() {
         `  Downloading: ${sermon.displayTitle || sermon.fullTitle} (${sermon.sermonID})`
       );
 
-      const transcriptText = await fetchTranscriptText(
-        sermon.transcript.downloadURL
-      );
+      const transcriptText = await fetchTranscriptText(sermon.sermonID);
 
       if (!transcriptText) {
         totalNoTranscript++;
