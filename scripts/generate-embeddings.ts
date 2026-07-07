@@ -8,12 +8,40 @@ import type { SermonData } from "../src/lib/types";
 
 const DATA_DIR = join(process.cwd(), "data", "sermons");
 const EMBEDDING_BATCH_SIZE = 96;
-const UPSERT_BATCH_SIZE = 10;
+const UPSERT_BATCH_SIZE = 5;
+const UPSERT_MAX_RETRIES = 5;
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+// Retry transient Postgres errors (statement timeouts, often from cold/slow
+// compute on the first heavy write) with exponential backoff.
+async function upsertChunksWithRetry(
+  rows: Record<string, unknown>[]
+): Promise<void> {
+  for (let attempt = 1; ; attempt++) {
+    const { error } = await supabase
+      .from("sermon_chunks")
+      .upsert(rows, { onConflict: "sermon_id,chunk_index" });
+    if (!error) return;
+
+    const transient = /timeout|canceling statement|fetch failed|ECONNRESET/i.test(
+      error.message
+    );
+    if (!transient || attempt >= UPSERT_MAX_RETRIES) {
+      throw new Error(`Upsert error: ${error.message}`);
+    }
+    const backoff = 1000 * 2 ** (attempt - 1);
+    console.warn(
+      `\n  Upsert attempt ${attempt} failed (${error.message}); retrying in ${backoff}ms...`
+    );
+    await sleep(backoff);
+  }
+}
 
 interface ChunkRecord {
   id: string;
@@ -159,10 +187,7 @@ async function main() {
         embedding: JSON.stringify(embeddings[j + k]),
       }));
 
-      const { error } = await supabase.from("sermon_chunks").upsert(rows, {
-        onConflict: "sermon_id,chunk_index",
-      });
-      if (error) throw new Error(`Upsert error: ${error.message}`);
+      await upsertChunksWithRetry(rows);
     }
 
     process.stdout.write(
