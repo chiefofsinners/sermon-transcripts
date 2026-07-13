@@ -5,11 +5,12 @@ import Link from "next/link";
 import ReadingSettingsProvider, { useReadingSettings } from "./ReadingSettingsProvider";
 import ReadingSettingsOverlay from "./ReadingSettingsOverlay";
 
-type AiProvider = "anthropic" | "deepseek" | "openai" | "xai";
+type AiProvider = "anthropic" | "deepseek" | "google" | "openai" | "xai";
 
 const AI_PROVIDERS: { value: AiProvider; label: string }[] = [
   { value: "anthropic", label: "Claude" },
   { value: "deepseek", label: "DeepSeek" },
+  { value: "google", label: "Gemini" },
   { value: "openai", label: "GPT" },
   { value: "xai", label: "Grok" },
 ];
@@ -208,7 +209,7 @@ function startLiveStream(query: string, provider: AiProvider) {
         .trim();
 
       if (!finalResponse) {
-        const providerName = { anthropic: "Claude", deepseek: "DeepSeek", openai: "GPT", xai: "Grok" }[provider] || "The model";
+        const providerName = { anthropic: "Claude", deepseek: "DeepSeek", google: "Gemini", openai: "GPT", xai: "Grok" }[provider] || "The model";
         throw new Error(`${providerName} is currently unavailable. Try again or switch to a different model.`);
       }
 

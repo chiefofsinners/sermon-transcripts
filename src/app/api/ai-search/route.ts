@@ -1,5 +1,6 @@
 import { anthropic } from "@ai-sdk/anthropic";
 import { deepseek } from "@ai-sdk/deepseek";
+import { google } from "@ai-sdk/google";
 import { openai as openaiProvider } from "@ai-sdk/openai";
 import { xai } from "@ai-sdk/xai";
 import { generateText, streamText, tool, stepCountIs } from "ai";
@@ -10,11 +11,12 @@ import { AI_SYSTEM_PROMPT, RETRIEVAL_SYSTEM_PROMPT } from "@/lib/siteConfig";
 
 // --- Provider config ---
 
-type AiProvider = "anthropic" | "deepseek" | "openai" | "xai";
+type AiProvider = "anthropic" | "deepseek" | "google" | "openai" | "xai";
 
 const PROVIDER_MODEL_IDS: Record<AiProvider, string> = {
   anthropic: process.env.AI_SEARCH_MODEL_ANTHROPIC || "claude-haiku-4-5",
   deepseek: process.env.AI_SEARCH_MODEL_DEEPSEEK || "deepseek-v4-flash",
+  google: process.env.AI_SEARCH_MODEL_GOOGLE || "gemini-3.5-flash",
   openai: process.env.AI_SEARCH_MODEL_OPENAI || "gpt-5.5",
   xai: process.env.AI_SEARCH_MODEL_XAI || "grok-4.20",
 };
@@ -24,6 +26,7 @@ function getModel(provider: AiProvider) {
   switch (provider) {
     case "anthropic": return anthropic(id);
     case "deepseek": return deepseek(id);
+    case "google": return google(id);
     case "openai": return openaiProvider(id);
     case "xai": return xai(id);
   }
@@ -307,7 +310,7 @@ export async function POST(request: Request) {
   }
 
   const provider: AiProvider =
-    rawProvider === "deepseek" || rawProvider === "openai" || rawProvider === "xai"
+    rawProvider === "deepseek" || rawProvider === "google" || rawProvider === "openai" || rawProvider === "xai"
       ? rawProvider
       : "anthropic";
 
