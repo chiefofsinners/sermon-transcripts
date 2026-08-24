@@ -6,6 +6,8 @@ import { join } from "path";
 
 const SIZE = 1024;
 
+const SITE_TITLE = process.env.NEXT_PUBLIC_SITE_TITLE || "Sermon Transcripts";
+
 async function main() {
   const logoData = readFileSync(
     join(process.cwd(), "public", "logo.png")
@@ -61,7 +63,7 @@ async function main() {
                 color: "#374151",
                 marginTop: 0,
               },
-              children: "Sermon Transcripts",
+              children: SITE_TITLE,
             },
           },
         ],

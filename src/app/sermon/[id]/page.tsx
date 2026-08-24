@@ -51,6 +51,7 @@ export async function generateMetadata({
     description,
     openGraph: {
       title,
+      siteName: SITE_TITLE,
       description,
       type: "article",
       ...(sermon.preachDate && { publishedTime: sermon.preachDate }),

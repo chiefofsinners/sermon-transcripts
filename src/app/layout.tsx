@@ -17,6 +17,7 @@ export const metadata: Metadata = {
     `Search through sermon transcripts from ${CHURCH_NAME}. Find sermons by keyword, preacher, passage, or topic.`,
   openGraph: {
     title: SITE_TITLE,
+    siteName: SITE_TITLE,
     description:
       `Search through sermon transcripts from ${CHURCH_NAME}. Find sermons by keyword, preacher, passage, or topic.`,
     type: "website",

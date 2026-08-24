@@ -37,7 +37,7 @@ export default function OgImage() {
             marginTop: 8,
           }}
         >
-          Sermon Transcripts
+          {SITE_TITLE}
         </div>
       </div>
     ),
