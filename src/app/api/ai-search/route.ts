@@ -13,6 +13,9 @@ import { AI_SYSTEM_PROMPT, RETRIEVAL_SYSTEM_PROMPT } from "@/lib/siteConfig";
 
 type AiProvider = "anthropic" | "deepseek" | "google" | "openai" | "xai";
 
+/** How many unread-but-newer sermons the backstop will fetch (see Phase A). */
+const MAX_BACKSTOP_TRANSCRIPTS = 2;
+
 const PROVIDER_MODEL_IDS: Record<AiProvider, string> = {
   anthropic: process.env.AI_SEARCH_MODEL_ANTHROPIC || "claude-haiku-4-5",
   deepseek: process.env.AI_SEARCH_MODEL_DEEPSEEK || "deepseek-v4-flash",
@@ -42,17 +45,47 @@ interface Source {
   bibleText: string;
 }
 
+// --- Retrieval filters ---
+
+type FilterKey =
+  | "filter_preacher"
+  | "filter_series"
+  | "filter_date_from"
+  | "filter_date_to"
+  | "filter_bible_text";
+
+const FILTER_LABELS: Record<FilterKey, string> = {
+  filter_preacher: "preacher",
+  filter_series: "series",
+  filter_date_from: "dateFrom",
+  filter_date_to: "dateTo",
+  filter_bible_text: "bibleText",
+};
+
+interface SearchChunkRow {
+  sermon_id: string;
+  title: string;
+  preacher: string;
+  preach_date: string;
+  bible_text: string;
+  series: string;
+  series_name: string | null;
+  chunk_index: number;
+  chunk_text: string;
+  similarity: number;
+}
+
 // --- Agent tools ---
 
 function createAgentTools(sources: Map<string, Source>) {
   return {
     searchSermons: tool({
       description:
-        "Semantic vector search across all sermon transcripts. Use this to find sermon content relevant to a topic, question, or theme. You can optionally filter by preacher, series, bible text, or date range.",
+        "Semantic vector search across all sermon transcripts. Use this to find sermon content relevant to a topic, question, or theme. You can optionally filter by preacher, series, bible text, or date range — but filters are combined with AND, so only pass ones the user actually asked for. Ranks by meaning only: it cannot find 'the most recent' sermon, use listSermons for that.",
       inputSchema: z.object({
         query: z.string().describe("The search query — what to look for in sermons"),
         preacher: z.string().optional().describe("Filter to a specific preacher name"),
-        series: z.string().optional().describe("Filter by series ID or series name (e.g. 'Isaiah' will match 'Isaiah Series')"),
+        series: z.string().optional().describe("Filter by series ID or series name (e.g. 'Isaiah' will match 'Isaiah Series'). Many sermons belong to no series, so only pass this when the user named a series."),
         bibleText: z.string().optional().describe("Filter to sermons on a specific Bible passage"),
         dateFrom: z.string().optional().describe("Filter to sermons preached on or after this date (YYYY-MM-DD)"),
         dateTo: z.string().optional().describe("Filter to sermons preached on or before this date (YYYY-MM-DD)"),
@@ -61,32 +94,60 @@ function createAgentTools(sources: Map<string, Source>) {
       execute: async ({ query, preacher, series, bibleText, dateFrom, dateTo, maxResults }) => {
         const queryEmbedding = (await embed([query], "query"))[0];
 
-        const { data, error } = await supabase.rpc("search_chunks", {
-          query_embedding: JSON.stringify(queryEmbedding),
-          match_count: maxResults ?? 20,
+        const filters: Record<FilterKey, string | null> = {
           filter_preacher: preacher ?? null,
           filter_series: series ?? null,
           filter_date_from: dateFrom ?? null,
           filter_date_to: dateTo ?? null,
           filter_bible_text: bibleText ?? null,
-        });
+        };
 
-        if (error) {
-          console.error("[ai-search] searchSermons RPC error:", error);
-          return { error: error.message };
+        // Filters are ANDed in SQL, so a single speculative one zeroes out an
+        // otherwise good search — and the agent reads an empty result as "no
+        // such sermon exists" rather than "my filter was wrong". So on an empty
+        // result, drop filters one at a time and retry. `series` goes first
+        // because it is the least reliable: the model tends to guess a series
+        // from the question, and plenty of sermons belong to no series at all.
+        const RELAXATION_ORDER: FilterKey[] = [
+          "filter_series",
+          "filter_bible_text",
+          "filter_date_from",
+          "filter_date_to",
+          "filter_preacher",
+        ];
+
+        const active = { ...filters };
+        const dropped: string[] = [];
+        let data: SearchChunkRow[] | null = null;
+
+        for (;;) {
+          const res = await supabase.rpc("search_chunks", {
+            query_embedding: JSON.stringify(queryEmbedding),
+            match_count: maxResults ?? 20,
+            ...active,
+          });
+
+          if (res.error) {
+            console.error("[ai-search] searchSermons RPC error:", res.error);
+            return { error: res.error.message };
+          }
+
+          data = (res.data ?? []) as SearchChunkRow[];
+          if (data.length > 0) break;
+
+          const next = RELAXATION_ORDER.find((k) => active[k] !== null);
+          if (!next) break;
+          active[next] = null;
+          dropped.push(FILTER_LABELS[next]);
         }
 
-        const results = (data ?? []).map((row: {
-          sermon_id: string;
-          title: string;
-          preacher: string;
-          preach_date: string;
-          bible_text: string;
-          series: string;
-          chunk_index: number;
-          chunk_text: string;
-          similarity: number;
-        }) => {
+        if (dropped.length > 0) {
+          console.log(
+            `[ai-search] searchSermons relaxed filters: ${dropped.join(", ")} | results=${data.length}`
+          );
+        }
+
+        const results = (data ?? []).map((row) => {
           // Track source
           if (!sources.has(row.sermon_id)) {
             sources.set(row.sermon_id, {
@@ -103,13 +164,21 @@ function createAgentTools(sources: Map<string, Source>) {
             preacher: row.preacher,
             preachDate: row.preach_date,
             bibleText: row.bible_text,
-            series: row.series,
+            series: row.series_name ?? row.series,
             chunkText: row.chunk_text,
             similarity: row.similarity,
           };
         });
 
-        return results;
+        return {
+          results,
+          ...(dropped.length > 0
+            ? {
+                droppedFilters: dropped,
+                note: `No chunks matched with the ${dropped.join(" and ")} filter${dropped.length > 1 ? "s" : ""} applied, so ${dropped.length > 1 ? "they were" : "it was"} dropped and the search re-run. These results are NOT restricted by ${dropped.join(" or ")} — check each result before relying on it.`,
+              }
+            : {}),
+        };
       },
     }),
 
@@ -161,6 +230,19 @@ function createAgentTools(sources: Map<string, Source>) {
         chunkIndices: z.array(z.number()).optional().describe("Specific chunk indices to fetch. If omitted, returns all chunks."),
       }),
       execute: async ({ sermonID, chunkIndices }) => {
+        // Fetch the sermon's metadata alongside the chunks: it registers the
+        // sermon as a source (so it shows in the UI's source list) and lets
+        // each chunk carry its own attribution into the answer context.
+        const { data: sermon, error: sermonError } = await supabase
+          .from("sermons")
+          .select("sermon_id, title, preacher, preach_date, bible_text")
+          .eq("sermon_id", sermonID)
+          .single();
+
+        if (sermonError || !sermon) {
+          return { error: sermonError?.message ?? "Sermon not found" };
+        }
+
         let query = supabase
           .from("sermon_chunks")
           .select("chunk_index, text")
@@ -177,19 +259,34 @@ function createAgentTools(sources: Map<string, Source>) {
           return { error: error.message };
         }
 
+        if (!sources.has(sermon.sermon_id)) {
+          sources.set(sermon.sermon_id, {
+            sermonID: sermon.sermon_id,
+            title: sermon.title,
+            preacher: sermon.preacher,
+            preachDate: sermon.preach_date ?? "",
+            bibleText: sermon.bible_text ?? "",
+          });
+        }
+
         return (data ?? []).map((row: { chunk_index: number; text: string }) => ({
+          sermonID: sermon.sermon_id,
+          title: sermon.title,
+          preacher: sermon.preacher,
+          preachDate: sermon.preach_date,
+          bibleText: sermon.bible_text,
           chunkIndex: row.chunk_index,
-          text: row.text,
+          chunkText: row.text,
         }));
       },
     }),
 
     listSermons: tool({
       description:
-        "Search for sermons by metadata (preacher, series, date range) without vector search. Use this when you need to find sermons by a specific preacher, within a date range, or in a particular series.",
+        "Search for sermons by metadata (preacher, series, date range) without vector search. Results are ordered newest first, so this is the ONLY reliable way to answer questions about recent, latest, or most recent sermons. Returns titles and dates only — follow up with getSermonTranscript or getSermonChunks on the sermons you intend to discuss, or their content will not reach the answer.",
       inputSchema: z.object({
         preacher: z.string().optional().describe("Filter by preacher name"),
-        series: z.string().optional().describe("Filter by series ID or series name (e.g. 'Isaiah' will match 'Isaiah Series')"),
+        series: z.string().optional().describe("Filter by series ID or series name (e.g. 'Isaiah' will match 'Isaiah Series'). Many sermons belong to no series, so only pass this when the user named a series."),
         dateFrom: z.string().optional().describe("Filter sermons on or after this date (YYYY-MM-DD)"),
         dateTo: z.string().optional().describe("Filter sermons on or before this date (YYYY-MM-DD)"),
         limit: z.number().optional().default(100).describe("Maximum results to return (default 100)"),
@@ -217,6 +314,7 @@ function createAgentTools(sources: Map<string, Source>) {
           preach_date: string;
           bible_text: string;
           series: string;
+          series_name: string | null;
           event_type: string;
           subtitle: string;
         }) => ({
@@ -225,7 +323,7 @@ function createAgentTools(sources: Map<string, Source>) {
           preacher: row.preacher,
           preachDate: row.preach_date,
           bibleText: row.bible_text,
-          series: row.series,
+          series: row.series_name ?? row.series,
           eventType: row.event_type,
           subtitle: row.subtitle,
         }));
@@ -262,14 +360,37 @@ function summarizeToolInput(toolName: string, input: Record<string, unknown>): s
   }
 }
 
-function describeToolStep(toolName: string, input: Record<string, unknown>, resultCount: number): string {
+/**
+ * Tool results arrive either as a bare array of rows or, for searchSermons,
+ * as `{ results, droppedFilters?, note? }`. Normalise to the rows.
+ */
+function toolResultRows(
+  value: unknown
+): Record<string, string | number | undefined>[] | null {
+  if (Array.isArray(value)) return value;
+  if (value && typeof value === "object" && Array.isArray((value as { results?: unknown }).results)) {
+    return (value as { results: Record<string, string | number | undefined>[] }).results;
+  }
+  return null;
+}
+
+function describeToolStep(
+  toolName: string,
+  input: Record<string, unknown>,
+  resultCount: number,
+  droppedFilters?: string[]
+): string {
   switch (toolName) {
     case "searchSermons": {
       const q = String(input.query ?? "").slice(0, 60);
       const filters: string[] = [];
       if (input.preacher) filters.push(`by ${input.preacher}`);
       if (input.bibleText) filters.push(`on ${input.bibleText}`);
+      if (input.series) filters.push(`in ${input.series}`);
       const suffix = filters.length > 0 ? ` ${filters.join(", ")}` : "";
+      if (droppedFilters && droppedFilters.length > 0) {
+        return `Searched "${q}"${suffix} — no matches, so widened the search (dropped ${droppedFilters.join(", ")}) and found ${resultCount} results`;
+      }
       return `Searched "${q}"${suffix} — found ${resultCount} results`;
     }
     case "getSermonTranscript":
@@ -363,11 +484,13 @@ export async function POST(request: Request) {
                 const tc = toolCalls[i];
                 const tr = toolResults[i];
                 const input = tc.input as Record<string, unknown>;
-                const resultCount = Array.isArray(tr?.output) ? tr.output.length : tr?.output ? 1 : 0;
+                const rows = toolResultRows(tr?.output);
+                const resultCount = rows ? rows.length : tr?.output ? 1 : 0;
+                const droppedFilters = (tr?.output as { droppedFilters?: string[] } | undefined)?.droppedFilters;
                 console.log(
-                  `[ai-search] step tool=${tc.toolName} | ${summarizeToolInput(tc.toolName, input)} | results=${resultCount}`
+                  `[ai-search] step tool=${tc.toolName} | ${summarizeToolInput(tc.toolName, input)} | results=${resultCount}${droppedFilters ? ` | dropped=${droppedFilters.join(",")}` : ""}`
                 );
-                sendStatus(describeToolStep(tc.toolName, input, resultCount));
+                sendStatus(describeToolStep(tc.toolName, input, resultCount, droppedFilters));
               }
             } else {
               console.log(`[ai-search] step (no tool calls — planning/finishing)`);
@@ -386,24 +509,82 @@ export async function POST(request: Request) {
 
         // Collect all chunk text from tool call results for context
         const contextChunks: string[] = [];
+        // Sermons we actually hold text for, and every sermon the catalogue
+        // said exists — compared below to catch a sermon the agent listed but
+        // never read.
+        const contentSermonIds = new Set<string>();
+        const catalogueEntries = new Map<string, string>();
         for (const step of retrievalResult.steps) {
           for (const toolResult of step.toolResults) {
             const value = toolResult.output;
-            if (Array.isArray(value)) {
-              for (const item of value) {
+            const rows = toolResultRows(value);
+            if (toolResult.toolName === "listSermons" && rows && rows.length > 0) {
+              // Metadata only — no transcript text. It still belongs in the
+              // context: without it the answer model cannot know a sermon
+              // exists at all, which is how a newly added sermon goes missing
+              // from "what was preached recently?".
+              for (const r of rows) {
+                if (typeof r.sermonID === "string" && typeof r.preachDate === "string") {
+                  catalogueEntries.set(r.sermonID, r.preachDate);
+                }
+              }
+              const listing = rows
+                .map(
+                  (r) =>
+                    `- ${r.preachDate ?? "undated"} — "${r.title}" by ${r.preacher}${r.bibleText ? ` (${r.bibleText})` : ""}`
+                )
+                .join("\n");
+              contextChunks.push(
+                `[Sermon catalogue — titles and dates only, newest first. These sermons exist and may be referred to by title, date, preacher and passage, but no transcript text was retrieved for them, so do not describe their content.]\n${listing}`
+              );
+            } else if (rows) {
+              for (const item of rows) {
                 if (item.chunkText) {
+                  if (typeof item.sermonID === "string") contentSermonIds.add(item.sermonID);
                   contextChunks.push(
                     `[Source: "${item.title}" by ${item.preacher}${item.bibleText ? ` (${item.bibleText})` : ""}${item.preachDate ? `, ${item.preachDate}` : ""}]\n${item.chunkText}`
                   );
-                } else if (item.text && item.chunkIndex !== undefined) {
-                  contextChunks.push(item.text);
                 }
               }
             } else if (value && typeof value === "object" && "transcript" in value) {
-              const v = value as { title: string; preacher: string; bibleText?: string; preachDate?: string; transcript: string };
+              const v = value as { sermonID?: string; title: string; preacher: string; bibleText?: string; preachDate?: string; transcript: string };
+              if (v.sermonID) contentSermonIds.add(v.sermonID);
               contextChunks.push(
                 `[Source: "${v.title}" by ${v.preacher}${v.bibleText ? ` (${v.bibleText})` : ""}${v.preachDate ? `, ${v.preachDate}` : ""}]\n${v.transcript}`
               );
+            }
+          }
+        }
+
+        // Backstop: the agent sometimes lists a sermon and then answers without
+        // reading it, which is how the newest sermon ends up acknowledged but
+        // undescribed ("the transcript is not available"). If the catalogue
+        // holds a sermon newer than anything we have text for, fetch it here
+        // rather than depending on the agent to follow the instruction.
+        const newestWithContent = [...contentSermonIds]
+          .map((id) => catalogueEntries.get(id))
+          .filter((d): d is string => Boolean(d))
+          .sort()
+          .pop();
+
+        const unread = [...catalogueEntries.entries()]
+          .filter(([id, date]) => !contentSermonIds.has(id) && (!newestWithContent || date > newestWithContent))
+          .sort(([, a], [, b]) => b.localeCompare(a))
+          .slice(0, MAX_BACKSTOP_TRANSCRIPTS);
+
+        if (unread.length > 0) {
+          sendStatus(`Reading ${unread.length} newer sermon${unread.length > 1 ? "s" : ""} the search missed...`);
+          for (const [sermonID] of unread) {
+            const fetched = await tools.getSermonTranscript.execute!(
+              { sermonID },
+              { toolCallId: `backstop-${sermonID}`, messages: [] }
+            );
+            if (fetched && typeof fetched === "object" && "transcript" in fetched) {
+              const v = fetched as { title: string; preacher: string; bibleText?: string; preachDate?: string; transcript: string };
+              contextChunks.push(
+                `[Source: "${v.title}" by ${v.preacher}${v.bibleText ? ` (${v.bibleText})` : ""}${v.preachDate ? `, ${v.preachDate}` : ""}]\n${v.transcript}`
+              );
+              console.log(`[ai-search] backstop fetched transcript for ${sermonID} (${v.preachDate})`);
             }
           }
         }
@@ -416,6 +597,10 @@ export async function POST(request: Request) {
         }
 
         const formattedContext = contextChunks.join("\n\n---\n\n");
+
+        console.log(
+          `[ai-search] context blocks=${contextChunks.length} | chars=${formattedContext.length} | catalogue=${contextChunks.some((c) => c.startsWith("[Sermon catalogue"))}`
+        );
 
         // --- Phase B: Streaming Answer ---
         const result = streamText({

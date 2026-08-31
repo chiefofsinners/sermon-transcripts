@@ -18,6 +18,11 @@ create table if not exists sermons (
   transcript  text not null
 );
 
+-- SermonAudio stores `series` as a numeric seriesID. The human-readable name
+-- lives in data/series-names.json, so we mirror it here — without it, any
+-- filter on a series *name* silently matches nothing.
+alter table sermons add column if not exists series_name text;
+
 create table if not exists sermon_chunks (
   id            bigint generated always as identity primary key,
   sermon_id     text not null references sermons(sermon_id) on delete cascade,
@@ -41,6 +46,7 @@ create index if not exists idx_chunks_embedding
 -- Metadata filters on sermons
 create index if not exists idx_sermons_preacher   on sermons (preacher);
 create index if not exists idx_sermons_series     on sermons (series);
+create index if not exists idx_sermons_series_name on sermons (series_name);
 create index if not exists idx_sermons_preach_date on sermons (preach_date);
 
 -- Full-text search on keywords
@@ -52,6 +58,8 @@ create index if not exists idx_sermons_keywords
 -- Vector similarity search with optional metadata filters.
 -- Returns chunks joined with sermon metadata, ordered by similarity.
 -- ============================================================
+
+drop function if exists search_chunks(vector, int, text, text, date, date, text);
 
 create or replace function search_chunks(
   query_embedding     vector(1536),
@@ -69,11 +77,22 @@ returns table (
   preach_date date,
   bible_text  text,
   series      text,
+  series_name text,
   chunk_index int,
   chunk_text  text,
   similarity  float
 )
 language plpgsql
+-- pgvector applies this function's WHERE clause *after* the HNSW index has
+-- handed back its candidates, and by default the index stops at ef_search (40)
+-- of them. A filtered search therefore silently returns far fewer rows than
+-- match_count — often zero — which the AI agent reads as "no such sermon
+-- exists". Iterative scan makes the index keep going until it has enough rows
+-- that actually pass the filter; strict_order keeps them in true distance
+-- order. max_scan_tuples is raised past the chunk count so even a very
+-- selective filter can be satisfied.
+set hnsw.iterative_scan = 'strict_order'
+set hnsw.max_scan_tuples = '100000'
 as $$
 begin
   return query
@@ -84,6 +103,7 @@ begin
       s.preach_date,
       s.bible_text,
       s.series,
+      s.series_name,
       c.chunk_index,
       c.text as chunk_text,
       1 - (c.embedding <=> query_embedding) as similarity
@@ -91,7 +111,12 @@ begin
     join sermons s on s.sermon_id = c.sermon_id
     where
       (filter_preacher is null or s.preacher ilike '%' || filter_preacher || '%')
-      and (filter_series is null or s.series = filter_series or s.subtitle ilike '%' || filter_series || '%')
+      and (
+        filter_series is null
+        or s.series = filter_series
+        or s.series_name ilike '%' || filter_series || '%'
+        or s.subtitle ilike '%' || filter_series || '%'
+      )
       and (filter_date_from is null or s.preach_date >= filter_date_from)
       and (filter_date_to is null or s.preach_date <= filter_date_to)
       and (filter_bible_text is null or s.bible_text ilike '%' || filter_bible_text || '%')
@@ -104,6 +129,8 @@ $$;
 -- RPC: list_sermons
 -- Pure metadata search (no vectors).
 -- ============================================================
+
+drop function if exists list_sermons(text, text, date, date, int);
 
 create or replace function list_sermons(
   filter_preacher     text default null,
@@ -119,6 +146,7 @@ returns table (
   preach_date date,
   bible_text  text,
   series      text,
+  series_name text,
   event_type  text,
   subtitle    text
 )
@@ -133,15 +161,25 @@ begin
       s.preach_date,
       s.bible_text,
       s.series,
+      s.series_name,
       s.event_type,
       s.subtitle
     from sermons s
     where
       (filter_preacher is null or s.preacher ilike '%' || filter_preacher || '%')
-      and (filter_series is null or s.series = filter_series or s.subtitle ilike '%' || filter_series || '%')
+      and (
+        filter_series is null
+        or s.series = filter_series
+        or s.series_name ilike '%' || filter_series || '%'
+        or s.subtitle ilike '%' || filter_series || '%'
+      )
       and (filter_date_from is null or s.preach_date >= filter_date_from)
       and (filter_date_to is null or s.preach_date <= filter_date_to)
     order by s.preach_date desc nulls last
     limit match_limit;
 end;
 $$;
+
+-- Ask PostgREST to pick up the new column and function signatures immediately,
+-- rather than waiting for its next schema-cache refresh.
+notify pgrst, 'reload schema';

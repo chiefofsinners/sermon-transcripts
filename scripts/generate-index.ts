@@ -3,6 +3,7 @@ import { readdirSync, readFileSync, writeFileSync, mkdirSync } from "fs";
 import { join } from "path";
 import { gzipSync } from "zlib";
 import FlexSearch from "flexsearch";
+import { canonicalPreacher } from "../src/lib/preachers";
 import type { SermonData, SermonMeta } from "../src/lib/types";
 
 const DATA_DIR = join(process.cwd(), "data", "sermons");
@@ -120,7 +121,7 @@ async function generateIndex() {
       id: sermon.sermonID,
       title: sermon.title,
       displayTitle: sermon.displayTitle,
-      preacher: sermon.preacher,
+      preacher: canonicalPreacher(sermon.preacher),
       preachDate: sermon.preachDate,
       bibleText: sermon.bibleText,
       series: sermon.series ? (seriesNameMap[sermon.series] || null) : null,

@@ -4,10 +4,13 @@ import { join } from "path";
 import { createClient } from "@supabase/supabase-js";
 import { chunkTranscript, embeddingText } from "../src/lib/chunking";
 import { embed } from "../src/lib/embeddings";
+import { canonicalPreacher } from "../src/lib/preachers";
 import type { SermonData } from "../src/lib/types";
 
 const DATA_DIR = join(process.cwd(), "data", "sermons");
+const SERIES_CACHE = join(process.cwd(), "data", "series-names.json");
 const EMBEDDING_BATCH_SIZE = 96;
+const SELECT_PAGE_SIZE = 1000;
 const UPSERT_BATCH_SIZE = 5;
 const UPSERT_MAX_RETRIES = 5;
 
@@ -51,23 +54,36 @@ interface ChunkRecord {
   embeddingInput: string;
 }
 
+/** seriesID -> series title, refreshed by generate-index.ts from the SermonAudio API. */
+function loadSeriesNames(): Record<string, string> {
+  try {
+    return JSON.parse(readFileSync(SERIES_CACHE, "utf-8"));
+  } catch {
+    console.warn("No data/series-names.json — series names will be left null");
+    return {};
+  }
+}
+
 function loadSermons(): SermonData[] {
   const files = readdirSync(DATA_DIR).filter((f) => f.endsWith(".json"));
   console.log(`Found ${files.length} sermon files`);
   return files.map((f) => JSON.parse(readFileSync(join(DATA_DIR, f), "utf-8")));
 }
 
-function buildChunks(sermons: SermonData[]): ChunkRecord[] {
+function buildChunks(
+  sermons: SermonData[],
+  seriesNames: Record<string, string>
+): ChunkRecord[] {
   const chunks: ChunkRecord[] = [];
   for (const sermon of sermons) {
     if (!sermon.transcript || sermon.transcript.trim().length === 0) continue;
 
     const metadata = {
       title: sermon.title || sermon.displayTitle,
-      preacher: sermon.preacher,
+      preacher: canonicalPreacher(sermon.preacher),
       bibleText: sermon.bibleText || "",
       preachDate: sermon.preachDate || "",
-      series: sermon.series || "",
+      series: (sermon.series && seriesNames[sermon.series]) || "",
       subtitle: sermon.subtitle || "",
       keywords: sermon.keywords || "",
     };
@@ -89,13 +105,13 @@ function buildChunks(sermons: SermonData[]): ChunkRecord[] {
 async function getExistingChunkIds(): Promise<Set<string>> {
   const existing = new Set<string>();
   let offset = 0;
-  const pageSize = 1000;
 
   while (true) {
     const { data, error } = await supabase
       .from("sermon_chunks")
       .select("sermon_id, chunk_index")
-      .range(offset, offset + pageSize - 1);
+      .order("id")
+      .range(offset, offset + SELECT_PAGE_SIZE - 1);
 
     if (error) {
       console.warn("Could not list existing chunks:", error.message);
@@ -106,41 +122,176 @@ async function getExistingChunkIds(): Promise<Set<string>> {
     for (const row of data) {
       existing.add(`${row.sermon_id}_${row.chunk_index}`);
     }
-    offset += pageSize;
+    offset += SELECT_PAGE_SIZE;
   }
 
   return existing;
+}
+
+/**
+ * Repair metadata drift on sermon rows that are already in the vector store.
+ *
+ * Two things go stale here: a preacher whose SermonAudio display name we now
+ * canonicalise differently (see src/lib/preachers.ts), and series_name, which
+ * is filled in from data/series-names.json and so changes whenever that cache
+ * is refreshed. Both are used as AI-search filters, and a stale value means a
+ * filtered search silently returns nothing.
+ *
+ * Only rows that actually differ are written, so this is a no-op in the common
+ * case.
+ */
+async function syncMetadata(
+  sermons: SermonData[],
+  seriesNames: Record<string, string>
+): Promise<void> {
+  // PostgREST caps a select at 1000 rows, so this has to be paged — ordered by
+  // primary key so the pages don't shift underneath us.
+  const rows: { sermon_id: string; preacher: string; series: string | null; series_name: string | null }[] = [];
+  for (let offset = 0; ; offset += SELECT_PAGE_SIZE) {
+    const { data, error } = await supabase
+      .from("sermons")
+      .select("sermon_id, preacher, series, series_name")
+      .order("sermon_id")
+      .range(offset, offset + SELECT_PAGE_SIZE - 1);
+    if (error) {
+      console.warn("Could not read sermon metadata for sync:", error.message);
+      return;
+    }
+    if (!data || data.length === 0) break;
+    rows.push(...data);
+    if (data.length < SELECT_PAGE_SIZE) break;
+  }
+
+  const bySermonId = new Map(sermons.map((s) => [s.sermonID, s]));
+  const fixes: { sermon_id: string; preacher: string; series_name: string | null }[] = [];
+
+  for (const row of rows) {
+    const source = bySermonId.get(row.sermon_id);
+    // Rows with no local file (e.g. a sermon since removed from data/) are left alone.
+    if (!source) continue;
+
+    const preacher = canonicalPreacher(source.preacher);
+    const seriesName = (row.series && seriesNames[row.series]) || null;
+
+    if (row.preacher !== preacher || row.series_name !== seriesName) {
+      fixes.push({ sermon_id: row.sermon_id, preacher, series_name: seriesName });
+    }
+  }
+
+  if (fixes.length === 0) {
+    console.log("Metadata in sync — nothing to correct.");
+    return;
+  }
+
+  // Most corrections share the same target values (a whole series being
+  // backfilled at once, say), so group by value and issue one UPDATE per
+  // distinct pair rather than one per sermon.
+  const groups = new Map<string, { preacher: string; series_name: string | null; ids: string[] }>();
+  for (const fix of fixes) {
+    const key = `${fix.preacher}\u0000${fix.series_name ?? ""}`;
+    const group = groups.get(key);
+    if (group) group.ids.push(fix.sermon_id);
+    else groups.set(key, { preacher: fix.preacher, series_name: fix.series_name, ids: [fix.sermon_id] });
+  }
+
+  console.log(
+    `Correcting metadata on ${fixes.length} sermon(s) in ${groups.size} update(s)...`
+  );
+  for (const group of groups.values()) {
+    const { error: updateError } = await supabase
+      .from("sermons")
+      .update({ preacher: group.preacher, series_name: group.series_name })
+      .in("sermon_id", group.ids);
+    if (updateError) {
+      console.warn(`  ${group.ids.length} sermon(s) failed: ${updateError.message}`);
+    }
+  }
+}
+
+/**
+ * Remove chunks that the current data no longer produces — a transcript that
+ * was shortened leaves its trailing chunk_index values behind, and a sermon
+ * deleted from data/ leaves all of them.
+ *
+ * Only runs after a rebuild, and only after the replacements have been written,
+ * so the vector store is never missing content mid-run. (The old destructive
+ * rebuild achieved the same tidiness by emptying the table up front, which took
+ * AI search down for the length of the run.)
+ */
+async function pruneStaleChunks(
+  allChunks: ChunkRecord[],
+  existingIds: Set<string>
+): Promise<void> {
+  const currentIds = new Set(allChunks.map((c) => c.id));
+  const stale = [...existingIds].filter((id) => !currentIds.has(id));
+
+  if (stale.length === 0) {
+    console.log("\nNo stale chunks to prune.");
+    return;
+  }
+
+  // Chunk ids are `${sermonID}_${chunkIndex}`; group them back up so each
+  // sermon needs only one delete.
+  const bySermon = new Map<string, number[]>();
+  for (const id of stale) {
+    const split = id.lastIndexOf("_");
+    const sermonId = id.slice(0, split);
+    const chunkIndex = Number(id.slice(split + 1));
+    const indices = bySermon.get(sermonId);
+    if (indices) indices.push(chunkIndex);
+    else bySermon.set(sermonId, [chunkIndex]);
+  }
+
+  console.log(`\nPruning ${stale.length} stale chunk(s) across ${bySermon.size} sermon(s)...`);
+  for (const [sermonId, chunkIndices] of bySermon) {
+    const { error } = await supabase
+      .from("sermon_chunks")
+      .delete()
+      .eq("sermon_id", sermonId)
+      .in("chunk_index", chunkIndices);
+    if (error) console.warn(`  ${sermonId}: ${error.message}`);
+  }
 }
 
 async function main() {
   const rebuild = process.argv.includes("--rebuild");
 
   console.log("Using Supabase vector store");
-  if (rebuild) console.log("Rebuild mode: will delete all existing chunks first");
-
   if (rebuild) {
-    const { error } = await supabase.from("sermon_chunks").delete().neq("id", 0);
-    if (error) console.warn("Delete error:", error.message);
-    else console.log("Deleted all existing chunks");
+    console.log(
+      "Rebuild mode: re-embedding every chunk in place. Existing rows are " +
+        "overwritten as their replacements arrive, so AI search keeps working " +
+        "throughout; anything left over is pruned at the end."
+    );
   }
 
   // Load and chunk sermons
+  const seriesNames = loadSeriesNames();
   const sermons = loadSermons();
-  const allChunks = buildChunks(sermons);
+  const allChunks = buildChunks(sermons, seriesNames);
   console.log(`Total chunks: ${allChunks.length} from ${sermons.length} sermons`);
 
-  // Find which chunks are new
+  // Bring existing rows' filterable metadata up to date before indexing.
+  await syncMetadata(sermons, seriesNames);
+
+  // Find which chunks need embedding
   console.log("Checking existing chunks...");
   const existingIds = await getExistingChunkIds();
   console.log(`Existing chunks: ${existingIds.size}`);
 
-  const newChunks = allChunks.filter((c) => !existingIds.has(c.id));
+  const newChunks = rebuild
+    ? allChunks
+    : allChunks.filter((c) => !existingIds.has(c.id));
   if (newChunks.length === 0) {
     console.log("All chunks already indexed. Nothing to do.");
     return;
   }
 
-  console.log(`New chunks to index: ${newChunks.length}`);
+  console.log(
+    rebuild
+      ? `Chunks to re-embed: ${newChunks.length}`
+      : `New chunks to index: ${newChunks.length}`
+  );
 
   // Upsert parent sermon rows for any new chunks (FK constraint)
   const newSermonIds = [...new Set(newChunks.map((c) => c.sermonID))];
@@ -153,10 +304,11 @@ async function main() {
       return {
         sermon_id: s.sermonID,
         title: s.title || s.displayTitle,
-        preacher: s.preacher,
+        preacher: canonicalPreacher(s.preacher),
         preach_date: s.preachDate || null,
         bible_text: s.bibleText || null,
         series: s.series || null,
+        series_name: (s.series && seriesNames[s.series]) || null,
         event_type: s.eventType || null,
         keywords: s.keywords || null,
         subtitle: s.subtitle || null,
@@ -195,8 +347,18 @@ async function main() {
     );
   }
 
-  console.log(`\nDone! Indexed ${newChunks.length} new chunks.`);
-  console.log(`Total chunks: ${existingIds.size + newChunks.length}`);
+  if (rebuild) {
+    await pruneStaleChunks(allChunks, existingIds);
+  }
+
+  console.log(
+    rebuild
+      ? `\nDone! Re-embedded ${newChunks.length} chunks.`
+      : `\nDone! Indexed ${newChunks.length} new chunks.`
+  );
+  console.log(
+    `Total chunks: ${rebuild ? allChunks.length : existingIds.size + newChunks.length}`
+  );
 }
 
 main().catch((err) => {
